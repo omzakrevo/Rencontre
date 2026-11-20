@@ -36,9 +36,8 @@ test('login refuse un mauvais mot de passe', async () => {
 test('catalogue par ville regroupé par distributeur', async () => {
   const r = await api('GET', `/api/catalog?city_id=${cityId('Abidjan')}`);
   assert.equal(r.status, 200);
-  assert.equal(r.body.length, 1);
-  assert.equal(r.body[0].name, 'GazExpress');
-  assert.ok(r.body[0].offers.length >= 3);
+  assert.deepEqual(r.body.map((t) => t.name).sort(), ['GazExpress', 'Oryx Point Yopougon']);
+  assert.ok(r.body.find((t) => t.name === 'GazExpress').offers.length >= 3);
   const douala = await api('GET', `/api/catalog?city_id=${cityId('Douala')}`);
   assert.equal(douala.body[0].name, 'Butane Services');
 });
@@ -48,7 +47,7 @@ test('cycle complet : commande → confirmation → assignation → livraison', 
   const admin = await loginAs('admin@gazexpress.ci');
   const driver = await loginAs('livreur@gazexpress.ci');
   const abj = cityId('Abidjan');
-  const cat = (await api('GET', `/api/catalog?city_id=${abj}`)).body[0];
+  const cat = (await api('GET', `/api/catalog?city_id=${abj}`)).body.find((t) => t.name === 'GazExpress');
   const offer = cat.offers[0];
 
   const created = await api('POST', '/api/orders', {
@@ -102,7 +101,7 @@ test("annulation par le client remet le stock", async () => {
 test('refus du stock insuffisant et des produits hors ville', async () => {
   const client = await loginAs('client@demo.app');
   const abj = cityId('Abidjan');
-  const cat = (await api('GET', `/api/catalog?city_id=${abj}`)).body[0];
+  const cat = (await api('GET', `/api/catalog?city_id=${abj}`)).body.find((t) => t.name === 'GazExpress');
   const scarce = cat.offers.reduce((a, b) => (b.stock < a.stock ? b : a));
   const before = scarce.stock;
   const big = await api('POST', '/api/orders', {
@@ -153,4 +152,101 @@ test('superadmin peut suspendre un distributeur', async () => {
   await api('PATCH', `/api/platform/tenants/${butane.id}`, { active: true }, sa);
   // Un client ne peut pas accéder à l'espace plateforme.
   assert.equal((await api('GET', '/api/platform/tenants', null, await loginAs('client@demo.app'))).status, 403);
+});
+
+// Position de test : Cocody, Abidjan.
+const COCODY = { lat: 5.3600, lng: -3.9800 };
+
+test('recherche « ori » : trouve Oryx, points disponibles et les plus proches en premier', async () => {
+  const r = await api('GET', `/api/search?q=ori&lat=${COCODY.lat}&lng=${COCODY.lng}`);
+  assert.equal(r.status, 200);
+  const res = r.body.results;
+  assert.ok(res.length >= 3);
+  for (const p of res) assert.ok(p.products.every((o) => o.brand === 'Oryx'), p.name);
+  // Butane Services (Tradex, Douala) n'a pas d'Oryx.
+  assert.ok(!res.some((p) => p.tenant_name === 'Butane Services'));
+  assert.equal(res[0].name, 'GazExpress Cocody');
+  const avail = res.filter((p) => p.available);
+  for (let i = 1; i < avail.length; i++) assert.ok(avail[i - 1].distance_km <= avail[i].distance_km);
+});
+
+test('recherche par marque + poids, et marques suggérées', async () => {
+  const r = await api('GET', '/api/search?q=total%206');
+  assert.ok(r.body.results.length > 0);
+  for (const p of r.body.results) assert.ok(p.products.every((o) => o.brand === 'Total' && o.weight_kg === 6));
+  const brands = (await api('GET', `/api/brands?city_id=${cityId('Abidjan')}`)).body;
+  assert.ok(brands.includes('Oryx') && brands.includes('Total') && !brands.includes('Tradex'));
+  assert.equal((await api('GET', '/api/search?q=marqueinexistante')).body.results.length, 0);
+});
+
+test('demande de recharge : publiée, vue par les distributeurs de la ville, prise par un seul', async () => {
+  const client = await loginAs('client@demo.app');
+  const gx = await loginAs('admin@gazexpress.ci');
+  const oryxPoint = await loginAs('admin@oryxpoint.ci');
+  const butane = await loginAs('admin@butane.cm');
+  const created = await api('POST', '/api/requests', {
+    city_id: cityId('Abidjan'), service: 'collecte', brand: 'Oryx', weight_kg: 12.5, qty: 1,
+    address: 'Cocody Angré 8e tranche', ...COCODY,
+  }, client);
+  assert.equal(created.status, 200, JSON.stringify(created.body));
+  const id = created.body.id;
+  assert.equal(created.body.status, 'ouverte');
+
+  // Les deux distributeurs d'Abidjan la voient, pas celui de Douala.
+  const seen = (await api('GET', '/api/requests', null, gx)).body.open.find((x) => x.id === id);
+  assert.ok(seen);
+  assert.equal(seen.nearest_point.name, 'GazExpress Cocody');
+  assert.equal(seen.phone, null); // téléphone masqué avant prise en charge
+  assert.equal(seen.options[0].brand, 'Oryx'); // le produit demandé est proposé en premier
+  assert.equal(seen.options[0].weight_kg, 12.5);
+  assert.ok((await api('GET', '/api/requests', null, oryxPoint)).body.open.some((x) => x.id === id));
+  assert.ok(!(await api('GET', '/api/requests', null, butane)).body.open.some((x) => x.id === id));
+
+  const accepted = await api('POST', `/api/requests/${id}/accept`, { offer_id: seen.options[0].offer_id }, gx);
+  assert.equal(accepted.status, 200, JSON.stringify(accepted.body));
+  assert.equal(accepted.body.status, 'confirmee');
+  assert.equal(accepted.body.service, 'collecte');
+  assert.equal(accepted.body.lat, COCODY.lat);
+
+  // Le second distributeur arrive trop tard.
+  const oOffer = (await api('GET', `/api/catalog?city_id=${cityId('Abidjan')}`)).body
+    .find((t) => t.name === 'Oryx Point Yopougon').offers.find((o) => o.in_stock);
+  assert.equal((await api('POST', `/api/requests/${id}/accept`, { offer_id: oOffer.offer_id }, oryxPoint)).status, 409);
+
+  // Le client voit qui a pris sa demande et peut le contacter.
+  const mine = (await api('GET', `/api/requests/${id}`, null, client)).body;
+  assert.equal(mine.status, 'acceptee');
+  assert.equal(mine.tenant_name, 'GazExpress');
+  assert.ok(mine.tenant_phone);
+  assert.equal(mine.order_id, accepted.body.id);
+  assert.equal((await api('POST', `/api/requests/${id}/cancel`, null, client)).status, 400);
+});
+
+test('demande annulée par le client avant prise en charge', async () => {
+  const client = await loginAs('client@demo.app');
+  const r = (await api('POST', '/api/requests', {
+    city_id: cityId('Douala'), service: 'echange', brand: 'Tradex', address: 'Akwa, Douala',
+  }, client)).body;
+  assert.equal((await api('POST', `/api/requests/${r.id}/cancel`, null, client)).body.status, 'annulee');
+  const butane = await loginAs('admin@butane.cm');
+  assert.ok(!(await api('GET', '/api/requests', null, butane)).body.open.some((x) => x.id === r.id));
+  // Pas de demande dans une ville sans distributeur.
+  assert.equal((await api('POST', '/api/requests', { city_id: cityId('Cotonou'), service: 'echange', address: 'Cotonou centre' }, client)).status, 400);
+});
+
+test('le distributeur gère ses points de vente', async () => {
+  const gx = await loginAs('admin@gazexpress.ci');
+  const created = await api('POST', '/api/admin/points', {
+    city_id: cityId('Abidjan'), name: 'GazExpress Bingerville', address: 'Bingerville centre', lat: 5.355, lng: -3.885,
+  }, gx);
+  assert.equal(created.status, 200);
+  assert.equal((await api('POST', '/api/admin/points', { city_id: cityId('Douala'), name: 'X', address: 'Douala', lat: 4, lng: 9 }, gx)).status, 400);
+  assert.equal((await api('POST', '/api/admin/points', { city_id: cityId('Abidjan'), name: 'Sans GPS', address: 'Abidjan' }, gx)).status, 400);
+  await api('PATCH', `/api/admin/points/${created.body.id}`, { active: false }, gx);
+  const res = (await api('GET', '/api/search?q=total')).body.results;
+  assert.ok(!res.some((p) => p.name === 'GazExpress Bingerville'));
+  // Un autre distributeur ne peut pas le modifier.
+  const other = await loginAs('admin@butane.cm');
+  assert.equal((await api('DELETE', `/api/admin/points/${created.body.id}`, null, other)).status, 404);
+  assert.equal((await api('DELETE', `/api/admin/points/${created.body.id}`, null, gx)).status, 200);
 });

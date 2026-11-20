@@ -4,6 +4,7 @@ const crypto = require('node:crypto');
 const express = require('express');
 const { hashPassword, verifyPassword, createToken, readToken } = require('./auth');
 const { tx, PLANS } = require('./db');
+const { matches, distanceKm } = require('./search');
 
 const STATUS_LABELS = {
   en_attente: 'En attente',
@@ -191,6 +192,65 @@ function createApp(db) {
     return [...byTenant.values()];
   }));
 
+  // ---------- Recherche de points de vente ----------
+  const KIND_LABEL = { recharge: 'Recharge', bouteille: 'Bouteille neuve', accessoire: 'Accessoire' };
+  const offerText = (o) => `${o.brand || ''} ${o.name} ${o.weight_kg ? `${o.weight_kg} kg` : ''} ${KIND_LABEL[o.kind]}`;
+
+  /** Offres en vente (distributeur actif, ville desservie), éventuellement limitées à une ville. */
+  const liveOffers = (cityId) => q(`
+    SELECT o.id AS offer_id, o.tenant_id, o.city_id, o.price, o.stock, p.name, p.brand, p.weight_kg, p.kind
+    FROM offers o
+    JOIN products p ON p.id = o.product_id AND p.active = 1
+    JOIN tenants t ON t.id = o.tenant_id AND t.active = 1
+    JOIN tenant_cities tc ON tc.tenant_id = o.tenant_id AND tc.city_id = o.city_id AND tc.active = 1
+    ${cityId ? 'WHERE o.city_id = ?' : ''}
+    ORDER BY CASE p.kind WHEN 'recharge' THEN 0 WHEN 'bouteille' THEN 1 ELSE 2 END, p.weight_kg`).all(...(cityId ? [cityId] : []));
+
+  // Recherche publique : « Oryx », « total 12 », « ori »… → points de vente qui l'ont, du plus proche au plus loin.
+  app.get('/api/search', wrap((req) => {
+    const query = String(req.query.q || '').slice(0, 60);
+    const lat = coord(req.query.lat, 'latitude', 90);
+    const lng = coord(req.query.lng, 'longitude', 180);
+    const cityId = int(req.query.city_id, 'ville', { min: 1, optional: true });
+    const points = q(`
+      SELECT pt.*, c.name AS city_name, t.name AS tenant_name, t.currency, tc.delivery_fee, tc.min_delay_minutes
+      FROM points pt
+      JOIN tenants t ON t.id = pt.tenant_id AND t.active = 1
+      JOIN tenant_cities tc ON tc.tenant_id = pt.tenant_id AND tc.city_id = pt.city_id AND tc.active = 1
+      JOIN cities c ON c.id = pt.city_id
+      WHERE pt.active = 1 ${cityId ? 'AND pt.city_id = ?' : ''}`).all(...(cityId ? [cityId] : []));
+    const offers = liveOffers(cityId);
+    const results = [];
+    for (const pt of points) {
+      const all = offers.filter((o) => o.tenant_id === pt.tenant_id && o.city_id === pt.city_id);
+      const products = (query ? all.filter((o) => matches(query, offerText(o))) : all)
+        .map(({ tenant_id: _t, city_id: _c, stock, ...o }) => ({ ...o, in_stock: stock > 0 }));
+      if (query && !products.length) continue;
+      results.push({
+        id: pt.id, name: pt.name, address: pt.address, phone: pt.phone, hours: pt.hours, lat: pt.lat, lng: pt.lng,
+        city_id: pt.city_id, city_name: pt.city_name, tenant_id: pt.tenant_id, tenant_name: pt.tenant_name,
+        currency: pt.currency, delivery_fee: pt.delivery_fee, min_delay_minutes: pt.min_delay_minutes,
+        available: products.some((o) => o.in_stock), products,
+        distance_km: lat !== null && lng !== null ? Math.round(distanceKm(lat, lng, pt.lat, pt.lng) * 10) / 10 : null,
+      });
+    }
+    // Disponibles d'abord, puis du plus proche au plus loin.
+    results.sort((a, b) => (b.available - a.available)
+      || ((a.distance_km ?? 0) - (b.distance_km ?? 0))
+      || a.city_name.localeCompare(b.city_name) || a.name.localeCompare(b.name));
+    return { query, results: results.slice(0, 40) };
+  }));
+
+  // Marques disponibles (suggestions de recherche).
+  app.get('/api/brands', wrap((req) => {
+    const cityId = int(req.query.city_id, 'ville', { min: 1, optional: true });
+    const counts = new Map();
+    for (const o of liveOffers(cityId)) {
+      if (o.brand && o.stock > 0) counts.set(o.brand, (counts.get(o.brand) || 0) + 1);
+    }
+    return [...counts.entries()].sort((a, b) => b[1] - a[1]).map(([brand]) => brand);
+  }));
+
   // ---------- Commandes ----------
   const orderDetail = (id) => {
     const o = q(`
@@ -208,6 +268,7 @@ function createApp(db) {
                   FROM order_events e LEFT JOIN users u ON u.id = e.user_id
                   WHERE e.order_id = ? ORDER BY e.id`).all(id);
     o.status_label = STATUS_LABELS[o.status];
+    o.service_label = { livraison: 'Livraison', ...SERVICES }[o.service] || o.service;
     return o;
   };
 
@@ -228,50 +289,69 @@ function createApp(db) {
     }
   };
 
-  app.post('/api/orders', need('customer'), wrap((req) => {
-    const b = req.body || {};
+  const PAYMENTS = ['especes', 'mobile_money', 'carte'];
+  const coord = (v, field, max) => {
+    if (v === undefined || v === null || v === '') return null;
+    const n = Number(v);
+    if (!Number.isFinite(n) || Math.abs(n) > max) fail(400, `Champ invalide : ${field}`);
+    return n;
+  };
+
+  /**
+   * Crée une commande et décrémente le stock. À appeler dans une transaction.
+   * Utilisé par la commande directe et par l'acceptation d'une demande.
+   */
+  const insertOrder = (customerId, b, { service = 'livraison', requestId = null, note = null, byUserId = customerId } = {}) => {
     const tenantId = int(b.tenant_id, 'distributeur', { min: 1 });
     const cityId = int(b.city_id, 'ville', { min: 1 });
     const zone = q(`SELECT tc.* FROM tenant_cities tc JOIN tenants t ON t.id = tc.tenant_id AND t.active = 1
                     WHERE tc.tenant_id = ? AND tc.city_id = ? AND tc.active = 1`).get(tenantId, cityId);
-    if (!zone) fail(400, "Ce distributeur ne livre pas dans cette ville");
+    if (!zone) fail(400, 'Ce distributeur ne livre pas dans cette ville');
     const items = Array.isArray(b.items) ? b.items : [];
     if (!items.length || items.length > 20) fail(400, 'Le panier est vide');
-    const payment = ['especes', 'mobile_money', 'carte'].includes(b.payment_method) ? b.payment_method : fail(400, 'Mode de paiement invalide');
+    const payment = PAYMENTS.includes(b.payment_method) ? b.payment_method : fail(400, 'Mode de paiement invalide');
     const slot = ['asap', 'matin', 'apres_midi', 'soir'].includes(b.slot) ? b.slot : 'asap';
     const address = str(b.address, 'adresse', { min: 5, max: 300 });
-    const phone = str(b.phone || req.user.phone, 'téléphone', { min: 6, max: 30 });
+    const phone = str(b.phone, 'téléphone', { min: 6, max: 30 });
     const notes = str(b.notes, 'notes', { max: 500, optional: true });
+    const lat = coord(b.lat, 'latitude', 90);
+    const lng = coord(b.lng, 'longitude', 180);
 
-    const id = tx(db, () => {
-      let subtotal = 0;
-      const lines = new Map();
-      for (const it of items) {
-        const offerId = int(it.offer_id, 'produit', { min: 1 });
-        const qty = int(it.qty, 'quantité', { min: 1, max: 50 });
-        lines.set(offerId, (lines.get(offerId) || 0) + qty);
-      }
-      const resolved = [];
-      for (const [offerId, qty] of lines) {
-        const o = q(`SELECT o.*, p.name FROM offers o JOIN products p ON p.id = o.product_id AND p.active = 1
-                     WHERE o.id = ? AND o.tenant_id = ? AND o.city_id = ?`).get(offerId, tenantId, cityId);
-        if (!o) fail(400, 'Produit indisponible dans cette ville');
-        // Décrément conditionnel : évite la survente en cas de commandes simultanées.
-        const upd = q('UPDATE offers SET stock = stock - ? WHERE id = ? AND stock >= ?').run(qty, offerId, qty);
-        if (upd.changes !== 1) fail(409, `Stock insuffisant pour « ${o.name} »`);
-        subtotal += o.price * qty;
-        resolved.push({ ...o, qty });
-      }
-      const ref = `GZ-${new Date().toISOString().slice(2, 10).replace(/-/g, '')}-${crypto.randomBytes(3).toString('hex').toUpperCase()}`;
-      const r = q(`INSERT INTO orders (ref, tenant_id, customer_id, city_id, address, phone, notes, slot, payment_method, subtotal, delivery_fee, total)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`)
-        .run(ref, tenantId, req.user.id, cityId, address, phone, notes, slot, payment, subtotal, zone.delivery_fee, subtotal + zone.delivery_fee);
-      const oid = Number(r.lastInsertRowid);
-      const ins = q('INSERT INTO order_items (order_id, offer_id, product_name, qty, unit_price) VALUES (?,?,?,?,?)');
-      for (const l of resolved) ins.run(oid, l.id, l.name, l.qty, l.price);
-      q('INSERT INTO order_events (order_id, status, note, user_id) VALUES (?,?,?,?)').run(oid, 'en_attente', null, req.user.id);
-      return oid;
-    });
+    let subtotal = 0;
+    const lines = new Map();
+    for (const it of items) {
+      const offerId = int(it.offer_id, 'produit', { min: 1 });
+      const qty = int(it.qty, 'quantité', { min: 1, max: 50 });
+      lines.set(offerId, (lines.get(offerId) || 0) + qty);
+    }
+    const resolved = [];
+    for (const [offerId, qty] of lines) {
+      const o = q(`SELECT o.*, p.name, p.brand FROM offers o JOIN products p ON p.id = o.product_id AND p.active = 1
+                   WHERE o.id = ? AND o.tenant_id = ? AND o.city_id = ?`).get(offerId, tenantId, cityId);
+      if (!o) fail(400, 'Produit indisponible dans cette ville');
+      // Décrément conditionnel : évite la survente en cas de commandes simultanées.
+      const upd = q('UPDATE offers SET stock = stock - ? WHERE id = ? AND stock >= ?').run(qty, offerId, qty);
+      if (upd.changes !== 1) fail(409, `Stock insuffisant pour « ${o.name} »`);
+      subtotal += o.price * qty;
+      resolved.push({ ...o, qty });
+    }
+    const ref = `GZ-${new Date().toISOString().slice(2, 10).replace(/-/g, '')}-${crypto.randomBytes(3).toString('hex').toUpperCase()}`;
+    const r = q(`INSERT INTO orders (ref, tenant_id, customer_id, city_id, address, phone, notes, slot, payment_method,
+                   subtotal, delivery_fee, total, service, lat, lng, request_id)
+                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+      .run(ref, tenantId, customerId, cityId, address, phone, notes, slot, payment, subtotal, zone.delivery_fee,
+        subtotal + zone.delivery_fee, service, lat, lng, requestId);
+    const oid = Number(r.lastInsertRowid);
+    const ins = q('INSERT INTO order_items (order_id, offer_id, product_name, qty, unit_price) VALUES (?,?,?,?,?)');
+    for (const l of resolved) ins.run(oid, l.id, l.brand ? `${l.name} ${l.brand}` : l.name, l.qty, l.price);
+    q('INSERT INTO order_events (order_id, status, note, user_id) VALUES (?,?,?,?)').run(oid, 'en_attente', note, byUserId);
+    return oid;
+  };
+
+  app.post('/api/orders', need('customer'), wrap((req) => {
+    const b = { ...(req.body || {}) };
+    b.phone = b.phone || req.user.phone;
+    const id = tx(db, () => insertOrder(req.user.id, b));
     return orderDetail(id);
   }));
 
@@ -286,7 +366,7 @@ function createApp(db) {
     if (req.query.city_id) { where.push('o.city_id = ?'); args.push(int(req.query.city_id, 'ville')); }
     const rows = q(`
       SELECT o.id, o.ref, o.status, o.total, o.created_at, o.address, o.phone, o.slot,
-             o.payment_method, o.payment_status, o.driver_id,
+             o.payment_method, o.payment_status, o.driver_id, o.service, o.lat, o.lng,
              c.name AS city_name, t.name AS tenant_name, t.currency, cu.name AS customer_name, d.name AS driver_name,
              (SELECT group_concat(qty || ' × ' || product_name, ', ') FROM order_items WHERE order_id = o.id) AS summary
       FROM orders o
@@ -337,6 +417,138 @@ function createApp(db) {
     if (o.status === 'annulee') fail(400, 'Commande annulée');
     q("UPDATE orders SET payment_status = 'paye', updated_at = datetime('now') WHERE id = ?").run(o.id);
     return orderDetail(o.id);
+  }));
+
+  // ---------- Demandes (recharge, échange, achat) ----------
+  const SERVICES = {
+    echange: 'Livraison + reprise de la bouteille vide',
+    collecte: 'Collecte de la bouteille, recharge et retour',
+    achat: "Achat d'une bouteille neuve",
+  };
+
+  const requestRow = (id) => q(`
+    SELECT r.*, c.name AS city_name, u.name AS customer_name, t.name AS tenant_name, t.phone AS tenant_phone,
+           o.ref AS order_ref, o.status AS order_status, o.total AS order_total, t.currency,
+           d.name AS driver_name, d.phone AS driver_phone
+    FROM requests r
+    JOIN cities c ON c.id = r.city_id
+    JOIN users u ON u.id = r.customer_id
+    LEFT JOIN tenants t ON t.id = r.tenant_id
+    LEFT JOIN orders o ON o.id = r.order_id
+    LEFT JOIN users d ON d.id = o.driver_id
+    WHERE r.id = ?`).get(id);
+
+  const decorateRequest = (r) => r && ({
+    ...r,
+    service_label: SERVICES[r.service],
+    order_status_label: r.order_status ? STATUS_LABELS[r.order_status] : null,
+  });
+
+  // Pour un distributeur : distance à son point le plus proche et produits qu'il peut proposer.
+  const requestForTenant = (r, tenantId) => {
+    const pts = q('SELECT name, lat, lng FROM points WHERE tenant_id = ? AND city_id = ? AND active = 1').all(tenantId, r.city_id);
+    let nearest = null;
+    if (r.lat !== null && r.lng !== null) {
+      for (const p of pts) {
+        const d = distanceKm(r.lat, r.lng, p.lat, p.lng);
+        if (!nearest || d < nearest.distance_km) nearest = { name: p.name, distance_km: Math.round(d * 10) / 10 };
+      }
+    }
+    const want = `${r.brand || ''} ${r.weight_kg ? r.weight_kg : ''}`.trim();
+    const kinds = r.service === 'achat' ? ['bouteille'] : ['recharge', 'bouteille'];
+    const options = liveOffers(r.city_id)
+      .filter((o) => o.tenant_id === tenantId && kinds.includes(o.kind))
+      .map((o) => ({ ...o, label: `${o.brand ? `${o.brand} · ` : ''}${o.name}`, match: want ? matches(want, offerText(o)) : true }))
+      .sort((a, b) => (b.match - a.match) || ((b.stock > 0) - (a.stock > 0)));
+    const out = { ...decorateRequest(r), nearest_point: nearest, options };
+    // Coordonnées du client réservées au distributeur qui prend la demande.
+    if (r.tenant_id !== tenantId) {
+      out.phone = null;
+      out.customer_name = String(r.customer_name).split(' ')[0];
+    }
+    return out;
+  };
+
+  app.post('/api/requests', need('customer'), wrap((req) => {
+    const b = req.body || {};
+    const cityId = int(b.city_id, 'ville', { min: 1 });
+    const served = q(`SELECT COUNT(*) n FROM tenant_cities tc JOIN tenants t ON t.id = tc.tenant_id AND t.active = 1
+                      WHERE tc.city_id = ? AND tc.active = 1`).get(cityId).n;
+    if (!served) fail(400, 'Aucun distributeur ne couvre encore cette ville');
+    const service = SERVICES[b.service] ? b.service : fail(400, 'Type de demande invalide');
+    const weight = b.weight_kg === '' || b.weight_kg == null ? null : Number(b.weight_kg);
+    if (weight !== null && !(weight > 0 && weight < 100)) fail(400, 'Poids invalide');
+    const r = q(`INSERT INTO requests (customer_id, city_id, service, brand, weight_kg, qty, address, phone, lat, lng, notes, payment_method)
+                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`).run(
+      req.user.id, cityId, service, str(b.brand, 'marque', { max: 40, optional: true }), weight,
+      int(b.qty ?? 1, 'quantité', { min: 1, max: 20 }), str(b.address, 'adresse', { min: 5, max: 300 }),
+      str(b.phone || req.user.phone, 'téléphone', { min: 6, max: 30 }), coord(b.lat, 'latitude', 90), coord(b.lng, 'longitude', 180),
+      str(b.notes, 'notes', { max: 500, optional: true }), PAYMENTS.includes(b.payment_method) ? b.payment_method : 'especes',
+    );
+    return decorateRequest(requestRow(r.lastInsertRowid));
+  }));
+
+  app.get('/api/requests', need('customer', 'admin'), wrap((req) => {
+    const u = req.user;
+    if (u.role === 'customer') {
+      return q('SELECT id FROM requests WHERE customer_id = ? ORDER BY id DESC LIMIT 50').all(u.id)
+        .map((r) => decorateRequest(requestRow(r.id)));
+    }
+    // Distributeur : demandes ouvertes (48 h) dans ses villes + celles qu'il a acceptées.
+    const open = q(`SELECT r.id FROM requests r
+      JOIN tenant_cities tc ON tc.city_id = r.city_id AND tc.tenant_id = ? AND tc.active = 1
+      WHERE r.status = 'ouverte' AND r.created_at >= datetime('now', '-48 hours') ORDER BY r.id DESC`).all(u.tenant_id);
+    const mine = q("SELECT id FROM requests WHERE tenant_id = ? ORDER BY id DESC LIMIT 30").all(u.tenant_id);
+    return {
+      open: open.map((r) => requestForTenant(requestRow(r.id), u.tenant_id))
+        .sort((a, b) => (a.nearest_point?.distance_km ?? 1e9) - (b.nearest_point?.distance_km ?? 1e9)),
+      accepted: mine.map((r) => decorateRequest(requestRow(r.id))),
+    };
+  }));
+
+  const loadRequest = (req) => {
+    const r = requestRow(int(req.params.id, 'demande', { min: 1 }));
+    const u = req.user;
+    const visible = r && ((u.role === 'customer' && r.customer_id === u.id)
+      || (u.role === 'admin' && (r.tenant_id === u.tenant_id || (r.status === 'ouverte'
+        && q('SELECT 1 FROM tenant_cities WHERE tenant_id = ? AND city_id = ? AND active = 1').get(u.tenant_id, r.city_id)))));
+    if (!visible) fail(404, 'Demande introuvable');
+    return r;
+  };
+
+  app.get('/api/requests/:id', need('customer', 'admin'), wrap((req) => {
+    const r = loadRequest(req);
+    return req.user.role === 'admin' ? requestForTenant(r, req.user.tenant_id) : decorateRequest(r);
+  }));
+
+  app.post('/api/requests/:id/cancel', need('customer'), wrap((req) => {
+    const r = loadRequest(req);
+    const upd = q("UPDATE requests SET status = 'annulee' WHERE id = ? AND status = 'ouverte'").run(r.id);
+    if (upd.changes !== 1) fail(400, 'Cette demande a déjà été prise en charge : annulez la commande associée.');
+    return decorateRequest(requestRow(r.id));
+  }));
+
+  // Le distributeur prend la demande : elle devient une commande confirmée, suivie comme les autres.
+  app.post('/api/requests/:id/accept', need('admin'), wrap((req) => {
+    const r = requestRow(int(req.params.id, 'demande', { min: 1 }));
+    if (!r || !q('SELECT 1 FROM tenant_cities WHERE tenant_id = ? AND city_id = ? AND active = 1').get(req.user.tenant_id, r.city_id)) {
+      fail(404, 'Demande introuvable');
+    }
+    const offerId = int((req.body || {}).offer_id, 'produit', { min: 1 });
+    const orderId = tx(db, () => {
+      const upd = q("UPDATE requests SET status = 'acceptee', tenant_id = ? WHERE id = ? AND status = 'ouverte'").run(req.user.tenant_id, r.id);
+      if (upd.changes !== 1) fail(409, 'Cette demande a déjà été prise par un autre distributeur ou annulée');
+      const tenant = q('SELECT name FROM tenants WHERE id = ?').get(req.user.tenant_id);
+      const oid = insertOrder(r.customer_id, {
+        tenant_id: req.user.tenant_id, city_id: r.city_id, items: [{ offer_id: offerId, qty: r.qty }],
+        payment_method: r.payment_method, address: r.address, phone: r.phone, notes: r.notes, lat: r.lat, lng: r.lng,
+      }, { service: r.service, requestId: r.id, note: `Demande prise en charge par ${tenant.name}`, byUserId: req.user.id });
+      q("UPDATE orders SET status = 'confirmee' WHERE id = ?").run(oid);
+      q('INSERT INTO order_events (order_id, status, note, user_id) VALUES (?,?,?,?)').run(oid, 'confirmee', null, req.user.id);
+      q('UPDATE requests SET order_id = ? WHERE id = ?').run(oid, r.id);
+      return oid;
+    });
+    return orderDetail(orderId);
   }));
 
   // ---------- Espace distributeur (admin) ----------
@@ -439,6 +651,48 @@ function createApp(db) {
     return publicUser(q('SELECT * FROM users WHERE id = ?').get(d.id));
   }));
 
+  admin.get('/points', wrap((req) => q(`SELECT pt.*, c.name AS city_name FROM points pt JOIN cities c ON c.id = pt.city_id
+    WHERE pt.tenant_id = ? ORDER BY c.name, pt.name`).all(req.user.tenant_id)));
+
+  const pointFields = (b, cur = {}) => {
+    const lat = coord(b.lat ?? cur.lat, 'latitude', 90);
+    const lng = coord(b.lng ?? cur.lng, 'longitude', 180);
+    if (lat === null || lng === null) fail(400, 'Position GPS requise (latitude et longitude)');
+    return {
+      name: str(b.name ?? cur.name, 'nom', { min: 2, max: 80 }),
+      address: str(b.address ?? cur.address, 'adresse', { min: 3, max: 200 }),
+      phone: str(b.phone ?? cur.phone, 'téléphone', { min: 6, max: 30, optional: true }),
+      hours: str(b.hours ?? cur.hours, 'horaires', { max: 60, optional: true }),
+      lat, lng,
+    };
+  };
+
+  admin.post('/points', wrap((req) => {
+    const b = req.body || {};
+    const cityId = int(b.city_id, 'ville', { min: 1 });
+    if (!q('SELECT 1 FROM tenant_cities WHERE tenant_id = ? AND city_id = ?').get(req.user.tenant_id, cityId)) fail(400, "Ajoutez d'abord cette ville à vos zones");
+    const f = pointFields(b);
+    const r = q('INSERT INTO points (tenant_id, city_id, name, address, phone, hours, lat, lng) VALUES (?,?,?,?,?,?,?,?)')
+      .run(req.user.tenant_id, cityId, f.name, f.address, f.phone, f.hours, f.lat, f.lng);
+    return q('SELECT * FROM points WHERE id = ?').get(r.lastInsertRowid);
+  }));
+
+  admin.patch('/points/:id', wrap((req) => {
+    const cur = q('SELECT * FROM points WHERE id = ? AND tenant_id = ?').get(int(req.params.id, 'point'), req.user.tenant_id);
+    if (!cur) fail(404, 'Point introuvable');
+    const b = req.body || {};
+    const f = pointFields(b, cur);
+    q('UPDATE points SET name = ?, address = ?, phone = ?, hours = ?, lat = ?, lng = ?, active = ? WHERE id = ?')
+      .run(f.name, f.address, f.phone, f.hours, f.lat, f.lng, b.active === undefined ? cur.active : (b.active ? 1 : 0), cur.id);
+    return q('SELECT * FROM points WHERE id = ?').get(cur.id);
+  }));
+
+  admin.delete('/points/:id', wrap((req) => {
+    const r = q('DELETE FROM points WHERE id = ? AND tenant_id = ?').run(int(req.params.id, 'point'), req.user.tenant_id);
+    if (r.changes !== 1) fail(404, 'Point introuvable');
+    return { ok: true };
+  }));
+
   admin.get('/stats', wrap((req) => {
     const t = req.user.tenant_id;
     const totals = q(`SELECT COUNT(*) AS orders,
@@ -452,8 +706,11 @@ function createApp(db) {
     const lowStock = q(`SELECT p.name, c.name AS city_name, o.stock FROM offers o
       JOIN products p ON p.id = o.product_id JOIN cities c ON c.id = o.city_id
       WHERE o.tenant_id = ? AND o.stock <= 10 AND p.active = 1 ORDER BY o.stock`).all(t);
+    const openRequests = q(`SELECT COUNT(*) n FROM requests r
+      JOIN tenant_cities tc ON tc.city_id = r.city_id AND tc.tenant_id = ? AND tc.active = 1
+      WHERE r.status = 'ouverte' AND r.created_at >= datetime('now', '-48 hours')`).get(t).n;
     const tenant = tenantOf(req);
-    return { totals, byCity, lowStock, tenant, plan: { id: tenant.plan, ...PLANS[tenant.plan] } };
+    return { totals, byCity, lowStock, openRequests, tenant, plan: { id: tenant.plan, ...PLANS[tenant.plan] } };
   }));
 
   admin.patch('/plan', wrap((req) => {
