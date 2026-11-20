@@ -1,5 +1,5 @@
 'use strict';
-/* GazFlow — interface web (SPA sans framework, routage par hash). */
+/* FasoGaz — interface web (SPA sans framework, routage par hash). */
 
 function readStore(key) {
   try { return JSON.parse(sessionStorage.getItem(key)); } catch { return null; }
@@ -207,12 +207,12 @@ const PHOTO_CREDITS = [
   ['JNY AAA', 'ynjatwork'], ['Ariel Nathan Ada Mbita', 'adambita237'], ['Eric Prouzet', 'eprouzet'], ['Elise Gaumier', 'e_g_e_photographie'],
 ];
 const footer = () => `<footer class="footer"><div class="wrap row">
-  <div style="max-width:320px"><a href="#/" class="brand"><span class="logo">${Art.logo()}</span> GazFlow</a>
+  <div style="max-width:320px"><a href="#/" class="brand"><span class="logo">${Art.logo()}</span> FasoGaz</a>
     <p>Trouver, commander et se faire livrer du gaz, ville par ville.</p></div>
   <div class="stack" style="--g:6px"><b>Clients</b><a href="#/">Trouver du gaz</a><a href="#/demande">Faire une demande</a><a href="#/commander">Commander</a></div>
   <div class="stack"><b>Distributeurs</b><a href="#/devenir-distributeur">Créer mon espace</a><a href="#/connexion">Connexion</a></div>
   <div class="small" style="max-width:300px">Photos : ${PHOTO_CREDITS.map(([n, u]) => `<a href="https://unsplash.com/@${u}?utm_source=gazflow&utm_medium=referral" target="_blank" rel="noopener">${n}</a>`).join(', ')}
-    sur <a href="https://unsplash.com/?utm_source=gazflow&utm_medium=referral" target="_blank" rel="noopener">Unsplash</a>. Illustrations animées : GazFlow.</div>
+    sur <a href="https://unsplash.com/?utm_source=gazflow&utm_medium=referral" target="_blank" rel="noopener">Unsplash</a>. Illustrations animées : FasoGaz.</div>
 </div></footer>`;
 
 const servicesSection = () => `
@@ -237,7 +237,7 @@ function landingSections(stats, plans, brands) {
   <section class="wrap section" id="comment">
     <div class="section-head reveal"><span class="kicker">Comment ça marche</span>
       <h2 class="section-title">De la bouteille vide à la bouteille pleine, en 3 étapes</h2>
-      <p>Plus besoin de faire le tour des dépôts ni d'appeler partout : GazFlow sait qui a votre gaz, et à quelle distance.</p></div>
+      <p>Plus besoin de faire le tour des dépôts ni d'appeler partout : FasoGaz sait qui a votre gaz, et à quelle distance.</p></div>
     <div class="steps3">${[
       [Art.stepSearch(), 'Tapez votre marque', 'Oryx, Sodigaz, Total, Shell… même mal écrite, avec ou sans la ville (« Oryx Bobo »). Les points de vente s’affichent du plus proche au plus loin.'],
       [Art.stepRequest(), 'Publiez une demande', 'Recharge, collecte ou bouteille neuve : tous les distributeurs de votre ville la reçoivent. Le premier la prend.'],
@@ -600,7 +600,7 @@ function pageLogin(params) {
   view.innerHTML = `
     <div class="auth-split">
      <div class="auth-art">
-       <div><h2>${tab === 'login' ? 'Content de vous revoir 👋' : 'Bienvenue sur GazFlow'}</h2>
+       <div><h2>${tab === 'login' ? 'Content de vous revoir 👋' : 'Bienvenue sur FasoGaz'}</h2>
          <p>Trouvez votre gaz au dépôt le plus proche, demandez une recharge et suivez votre livreur en direct.</p></div>
        ${Art.hero()}
      </div>
@@ -1100,7 +1100,7 @@ async function pagePlatform() {
   const [tenants, plans] = await Promise.all([api('GET', '/api/platform/tenants'), api('GET', '/api/plans')]);
   const active = tenants.filter((t) => t.active);
   if (pageId !== routeSeq) return; // page quittée entre-temps
-  view.innerHTML = `<h1>Plateforme GazFlow</h1>
+  view.innerHTML = `<h1>Plateforme FasoGaz</h1>
     <div class="grid g4">
       <div class="card kpi"><div class="v">${active.length}</div><div class="l">Distributeurs actifs</div></div>
       <div class="card kpi"><div class="v">${money(active.reduce((s, t) => s + t.mrr, 0))}</div><div class="l">Revenu mensuel (MRR)</div></div>
@@ -1367,7 +1367,14 @@ async function route(quiet = false) {
     if (roles.length && !roles.includes(role)) { location.hash = homeFor(role); return false; }
     return true;
   };
+  window.leaveFlow?.();
   try {
+    // Sur téléphone, l'accueil est le parcours pas-à-pas ; « #/carte » donne la recherche complète.
+    const isPhone = window.matchMedia('(max-width: 820px)').matches;
+    if (path === '/parcours' || (path === '/' && isPhone && (!role || role === 'customer'))) {
+      return (!role || role === 'customer') ? await window.pageFlow() : (location.hash = homeFor(role));
+    }
+    if (path === '/carte') return (!role || role === 'customer') ? await pageSearch(params) : (location.hash = homeFor(role));
     if (path === '/') return (!role || role === 'customer') ? await pageSearch(params) : (location.hash = homeFor(role));
     if (path === '/demande') return (!role || role === 'customer') ? await pageRequest(params) : guard('customer');
     if (path === '/admin/demandes') return guard('admin') && await pageAdminRequests();

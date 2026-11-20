@@ -1,6 +1,6 @@
-# 🔥 GazFlow — commande et livraison de gaz au Burkina Faso
+# 🔥 FasoGaz — commande et livraison de gaz au Burkina Faso
 
-GazFlow est une plateforme SaaS **multi-entreprises**, pensée pour le **Burkina Faso** (Ouagadougou, Bobo-Dioulasso, Banfora, Koudougou…) : chaque distributeur de gaz s'abonne, configure ses villes, ses prix, son stock et ses livreurs. Ensuite, les clients commandent en ligne et suivent leur livraison.
+FasoGaz est une plateforme SaaS **multi-entreprises**, pensée pour le **Burkina Faso** (Ouagadougou, Bobo-Dioulasso, Banfora, Koudougou…) : chaque distributeur de gaz s'abonne, configure ses villes, ses prix, son stock et ses livreurs. Ensuite, les clients commandent en ligne et suivent leur livraison.
 
 ## Pour le client : trouver du gaz en quelques secondes
 

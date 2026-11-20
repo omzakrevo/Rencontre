@@ -10,7 +10,7 @@ const { createApp } = require('./app');
   }
   const db = await openDb();
   const port = Number(process.env.PORT) || 3000;
-  const server = createApp(db).listen(port, () => console.log(`GazFlow démarré sur le port ${port}`));
+  const server = createApp(db).listen(port, () => console.log(`FasoGaz démarré sur le port ${port}`));
   // Arrêt propre (redéploiement Coolify / docker stop) : on termine les requêtes puis on ferme la base.
   const stop = () => server.close(() => db.close().finally(() => process.exit(0)));
   process.on('SIGTERM', stop);

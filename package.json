@@ -1,7 +1,7 @@
 {
   "name": "gazflow",
   "version": "1.0.0",
-  "description": "SaaS de commande et livraison de gaz multi-villes",
+  "description": "FasoGaz — SaaS de commande et livraison de gaz multi-villes",
   "main": "src/server.js",
   "scripts": {
     "start": "node src/server.js",
