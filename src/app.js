@@ -241,6 +241,17 @@ function createApp(db) {
     return { query, results: results.slice(0, 40) };
   }));
 
+  // Chiffres publics affichés sur l'accueil (calculés sur les données réelles).
+  app.get('/api/stats/public', wrap(() => {
+    const active = `SELECT tc.tenant_id, tc.city_id FROM tenant_cities tc JOIN tenants t ON t.id = tc.tenant_id AND t.active = 1 WHERE tc.active = 1`;
+    return {
+      cities: q(`SELECT COUNT(DISTINCT city_id) n FROM (${active})`).get().n,
+      distributors: q(`SELECT COUNT(DISTINCT tenant_id) n FROM (${active})`).get().n,
+      points: q(`SELECT COUNT(*) n FROM points p JOIN (${active}) z ON z.tenant_id = p.tenant_id AND z.city_id = p.city_id WHERE p.active = 1`).get().n,
+      brands: new Set(liveOffers().filter((o) => o.brand && o.stock > 0).map((o) => o.brand)).size,
+    };
+  }));
+
   // Marques disponibles (suggestions de recherche).
   app.get('/api/brands', wrap((req) => {
     const cityId = int(req.query.city_id, 'ville', { min: 1, optional: true });

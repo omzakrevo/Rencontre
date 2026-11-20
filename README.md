@@ -24,6 +24,28 @@ Le client voit **qui a pris sa demande**, peut **appeler le distributeur ou le l
 
 Un visiteur peut remplir une demande sans compte. Elle est conservée pendant qu'il se connecte ou crée son compte.
 
+## Design et motion design
+
+- **Une page d'accueil qui présente le projet** :
+  - une scène animée où les épingles tombent sur la carte, un livreur roule du dépôt à la maison et des notifications apparaissent ;
+  - un titre où la marque change (« Votre gaz Oryx / Total / Tradex… ») ;
+  - des chiffres réels qui défilent ;
+  - les sections « Comment ça marche » et services, une mosaïque de photos et une section distributeurs avec un tableau de bord animé.
+- **Animations dans toute l'application** :
+  - transitions entre les pages et apparitions au défilement ;
+  - écrans de chargement, états vides illustrés ;
+  - suivi de livraison avec un scooter qui avance jusqu'à l'étape en cours.
+- **Illustrations maison** (`public/art.js`) : en SVG animé, sans droits d'auteur, légères et adaptées au mode sombre. Elles se mettent en pause quand elles ne sont pas à l'écran.
+- **Accessibilité** : si l'appareil demande de réduire les animations, tout reste visible et rien ne bouge.
+- **Responsive** : menu mobile, recherche et carte empilées, commandes affichées en cartes sur téléphone, aucun défilement horizontal.
+- **Photos** (`public/img/`, [licence Unsplash](https://unsplash.com/license) : usage commercial gratuit) :
+  - livreur avec bouteille de gaz : [JNY AAA](https://unsplash.com/@ynjatwork) ;
+  - livreur à moto : [Ariel Nathan Ada Mbita](https://unsplash.com/@adambita237) ;
+  - bouteilles : [Eric Prouzet](https://unsplash.com/@eprouzet) ;
+  - cuisine : [Elise Gaumier](https://unsplash.com/@e_g_e_photographie).
+
+  Pour la production, remplacez-les par vos propres photos (vos dépôts, vos livreurs, vos marques).
+
 ## Les 4 espaces
 
 | Rôle | Ce qu'il peut faire |
@@ -86,7 +108,9 @@ src/
   search.js   recherche tolérante aux fautes et calcul de distance GPS
   db.js       schéma SQLite, offres d'abonnement, données de démonstration
   auth.js     mots de passe (scrypt) et jetons signés (HMAC)
-public/       interface web (HTML/CSS/JS, sans framework, responsive, mode sombre)
+public/       interface web (HTML/CSS/JS sans framework, responsive, mode sombre)
+  art.js      illustrations SVG animées
+  img/        photos
 test/         tests d'intégration de l'API (node:test)
 ```
 

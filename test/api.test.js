@@ -250,3 +250,8 @@ test('le distributeur gère ses points de vente', async () => {
   assert.equal((await api('DELETE', `/api/admin/points/${created.body.id}`, null, other)).status, 404);
   assert.equal((await api('DELETE', `/api/admin/points/${created.body.id}`, null, gx)).status, 200);
 });
+
+test("chiffres publics de l'accueil", async () => {
+  const r = (await api('GET', '/api/stats/public')).body;
+  assert.ok(r.cities >= 4 && r.distributors >= 3 && r.points >= 10 && r.brands >= 4, JSON.stringify(r));
+});

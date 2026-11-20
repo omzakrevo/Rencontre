@@ -25,6 +25,66 @@ const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '
 const money = (n, cur = 'FCFA') => `${Number(n || 0).toLocaleString('fr-FR')} ${esc(cur)}`;
 const date = (s) => new Date(`${s.replace(' ', 'T')}Z`).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' });
 const view = $('#view');
+const REDUCED = !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+const SKELETON = '<div class="skeleton" aria-busy="true" aria-label="Chargement"><div class="sk h"></div><div class="sk b"></div><div class="sk"></div><div class="sk" style="width:70%"></div></div>';
+
+// ---------- Motion design : apparitions au défilement, compteurs, parallaxe ----------
+let motionObserver = null;
+if ('IntersectionObserver' in window) {
+  document.documentElement.classList.add('js-reveal');
+  motionObserver = new IntersectionObserver((entries) => {
+    for (const e of entries) {
+      const el = e.target;
+      if (el.classList.contains('reveal') && e.isIntersecting) { el.classList.add('in'); motionObserver.unobserve(el); }
+      if (el.classList.contains('art')) {
+        // Les animations ne tournent que lorsque l'illustration est visible.
+        el.classList.toggle('paused', !e.isIntersecting);
+        if (!REDUCED && el.pauseAnimations) { if (e.isIntersecting) el.unpauseAnimations(); else el.pauseAnimations(); }
+      }
+      if (el.dataset.count && e.isIntersecting) { countUp(el); motionObserver.unobserve(el); }
+    }
+  }, { threshold: 0.15, rootMargin: '0px 0px -40px 0px' });
+}
+function observeMotion(root = document) {
+  if (REDUCED) $$('svg.art', root).forEach((svg) => svg.pauseAnimations?.());
+  if (!motionObserver) return;
+  $$('.reveal:not(.in), .art, [data-count]', root).forEach((el) => {
+    if (el.dataset.obs) return;
+    el.dataset.obs = '1';
+    motionObserver.observe(el);
+  });
+}
+function countUp(el) {
+  const target = Number(el.dataset.count) || 0;
+  if (REDUCED || !target) { el.textContent = target; return; }
+  const t0 = performance.now();
+  const step = (t) => {
+    const k = Math.min(1, (t - t0) / 1400);
+    el.textContent = Math.round(target * (1 - (1 - k) ** 3));
+    if (k < 1) requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+}
+let parallaxTick = false;
+window.addEventListener('scroll', () => {
+  if (REDUCED || parallaxTick) return;
+  parallaxTick = true;
+  requestAnimationFrame(() => {
+    parallaxTick = false;
+    for (const img of $$('[data-parallax]')) {
+      const r = img.parentElement.getBoundingClientRect();
+      if (r.bottom < 0 || r.top > innerHeight) continue;
+      const k = (r.top + r.height / 2 - innerHeight / 2) / innerHeight; // -1 … 1
+      img.style.transform = `scale(1.12) translateY(${(k * -24).toFixed(1)}px)`;
+    }
+  });
+}, { passive: true });
+function enterPage() {
+  view.classList.toggle('enter', false);
+  void view.offsetWidth; // relance l'animation d'entrée
+  view.classList.add('enter');
+  observeMotion();
+}
 
 const KIND = { recharge: 'Recharge', bouteille: 'Bouteille neuve', accessoire: 'Accessoire' };
 const PAY = { especes: 'Espèces à la livraison', mobile_money: 'Mobile Money', carte: 'Carte bancaire' };
@@ -114,7 +174,7 @@ function renderNav() {
     superadmin: [['#/plateforme', 'Distributeurs']],
   }[u ? u.role : 'guest'];
   const cur = (location.hash || '#/').split('?')[0];
-  $('#nav').innerHTML = links.map(([href, label]) => `<a href="${href}" class="${cur === href ? 'active' : ''}">${label}</a>`).join('')
+  $('#nav').innerHTML = links.map(([href, label]) => `<a href="${href}" class="${cur === href ? 'active' : ''}${!u && href === '#/demande' ? ' cta-nav' : ''}">${label}</a>`).join('')
     + (u ? `<span class="who hide-sm">${esc(u.name)} · ${ROLE[u.role]}</span><button id="logout">Déconnexion</button>` : '');
   $('#logout')?.addEventListener('click', () => logout());
 }
@@ -123,71 +183,198 @@ function renderNav() {
 let searchMap = null;
 let searchLayer = null;
 
-async function plansSection() {
-  const plans = await api('GET', '/api/plans');
-  return `<section style="margin-top:40px">
-      <h2 style="text-align:center">Vous êtes distributeur de gaz ?</h2>
-      <p class="muted" style="text-align:center">Apparaissez dans la recherche, recevez les demandes des clients proches et gérez vos livraisons. Sans engagement.</p>
-      <div class="grid g3">${plans.map((p) => `
-        <div class="card plan ${p.id === 'pro' ? 'featured' : ''}">
-          <h3>${esc(p.label)}</h3>
-          <div class="price">${money(p.price)}<span class="small muted"> /mois</span></div>
-          <p class="muted">${p.maxCities ? `${p.maxCities} ville(s)` : 'Villes illimitées'} · ${p.maxDrivers ? `${p.maxDrivers} livreurs` : 'Livreurs illimités'}</p>
-          <a class="btn ${p.id === 'pro' ? 'primary' : ''}" href="#/devenir-distributeur?plan=${p.id}">Choisir</a>
-        </div>`).join('')}
-      </div>
-    </section>`;
+const plansGrid = (plans) => plans.map((p, i) => `
+  <div class="card plan lift reveal d${i} ${p.id === 'pro' ? 'featured' : ''}">
+    <h3>${esc(p.label)}</h3>
+    <div class="price">${money(p.price)}<span class="small muted"> /mois</span></div>
+    <p class="muted">${p.maxCities ? `${p.maxCities} ville(s)` : 'Villes illimitées'} · ${p.maxDrivers ? `${p.maxDrivers} livreurs` : 'Livreurs illimités'}</p>
+    <a class="btn ${p.id === 'pro' ? 'primary' : ''}" href="#/devenir-distributeur?plan=${p.id}">Choisir ${esc(p.label)}</a>
+  </div>`).join('');
+
+const emptyBox = (html) => `<div class="empty">${window.Art ? Art.empty() : ''}<div>${html}</div></div>`;
+
+const PHOTO_CREDITS = [
+  ['JNY AAA', 'ynjatwork'], ['Ariel Nathan Ada Mbita', 'adambita237'], ['Eric Prouzet', 'eprouzet'], ['Elise Gaumier', 'e_g_e_photographie'],
+];
+const footer = () => `<footer class="footer"><div class="wrap row">
+  <div style="max-width:320px"><a href="#/" class="brand"><span class="logo">${Art.logo()}</span> GazFlow</a>
+    <p>Trouver, commander et se faire livrer du gaz, ville par ville.</p></div>
+  <div class="stack" style="--g:6px"><b>Clients</b><a href="#/">Trouver du gaz</a><a href="#/demande">Faire une demande</a><a href="#/commander">Commander</a></div>
+  <div class="stack"><b>Distributeurs</b><a href="#/devenir-distributeur">Créer mon espace</a><a href="#/connexion">Connexion</a></div>
+  <div class="small" style="max-width:300px">Photos : ${PHOTO_CREDITS.map(([n, u]) => `<a href="https://unsplash.com/@${u}?utm_source=gazflow&utm_medium=referral" target="_blank" rel="noopener">${n}</a>`).join(', ')}
+    sur <a href="https://unsplash.com/?utm_source=gazflow&utm_medium=referral" target="_blank" rel="noopener">Unsplash</a>. Illustrations animées : GazFlow.</div>
+</div></footer>`;
+
+const servicesSection = () => `
+  <section class="wrap section tight" id="services">
+    <div class="section-head reveal"><span class="kicker">Nos services</span><h2 class="section-title">Recharge, collecte ou bouteille neuve</h2>
+      <p>Publiez une demande : les distributeurs proches la reçoivent et le premier disponible s'en occupe.</p></div>
+    <div class="services">${[
+      ['echange', Art.serviceEchange(), 'Recharge (échange)', 'Le livreur apporte une bouteille pleine et repart avec votre bouteille vide.'],
+      ['collecte', Art.serviceCollecte(), 'Collecte et recharge', 'On vient chercher votre bouteille, on la recharge et on vous la ramène.'],
+      ['achat', Art.serviceNeuve(), 'Bouteille neuve', "Première bouteille ? Achetez-la avec la consigne, livrée chez vous."],
+    ].map(([k, art, t, d], i) => `<a class="card service lift reveal d${i}" href="#/demande?service=${k}">${art}<h3>${t}</h3><p class="muted">${d}</p><span class="go">Faire une demande →</span></a>`).join('')}
+    </div>
+  </section>`;
+
+function landingSections(stats, plans, brands) {
+  return `
+  <section class="wrap section tight"><div class="stats">
+    ${[[stats.cities, 'villes desservies'], [stats.points, 'points de vente'], [stats.distributors, 'distributeurs'], [stats.brands, 'marques de gaz']]
+      .map(([n, l], i) => `<div class="card stat reveal d${i}"><div class="n" data-count="${n}">${n}</div><div class="l">${l}</div></div>`).join('')}
+  </div></section>
+
+  <section class="wrap section" id="comment">
+    <div class="section-head reveal"><span class="kicker">Comment ça marche</span>
+      <h2 class="section-title">De la bouteille vide à la bouteille pleine, en 3 étapes</h2>
+      <p>Plus besoin de faire le tour des dépôts ni d'appeler partout : GazFlow sait qui a votre gaz, et à quelle distance.</p></div>
+    <div class="steps3">${[
+      [Art.stepSearch(), 'Tapez votre marque', 'Oryx, Total, Tradex… même mal écrite. Les points de vente qui l’ont s’affichent du plus proche au plus loin.'],
+      [Art.stepRequest(), 'Publiez une demande', 'Recharge, collecte ou bouteille neuve : tous les distributeurs de votre ville la reçoivent. Le premier la prend.'],
+      [Art.stepDelivery(), 'Le livreur arrive', 'Vous voyez qui s’en occupe, vous pouvez l’appeler et suivre la livraison jusqu’à votre porte.'],
+    ].map(([art, t, d], i) => `<div class="card step lift reveal d${i}"><span class="num">${i + 1}</span>${art}<h3>${t}</h3><p class="muted">${d}</p></div>`).join('')}
+    </div>
+  </section>
+
+  <section class="wrap section"><div class="story">
+    <div class="story-media reveal"><img src="/img/livreur-gaz.jpg" alt="Un livreur à moto transporte une bouteille de gaz" loading="lazy" data-parallax>
+      <div class="float-card a"><span class="ic">🛵</span><div>Livreur à 600 m<small>Arrivée dans 6 min</small></div></div>
+      <div class="float-card b"><span class="ic">✅</span><div>Demande acceptée<small>par GazExpress</small></div></div>
+    </div>
+    <div class="reveal d1"><span class="kicker">Fini le tour des dépôts</span>
+      <h2 class="section-title">Votre bouteille est vide ? On sait qui l'a, tout près de chez vous.</h2>
+      <ul class="checks">
+        <li><div><b>Disponibilité réelle</b><br><span class="muted">Les ruptures sont signalées : vous ne vous déplacez pas pour rien.</span></div></li>
+        <li><div><b>Le plus proche en premier</b><br><span class="muted">Distance calculée depuis votre position, itinéraire en un clic.</span></div></li>
+        <li><div><b>Un contact direct</b><br><span class="muted">Appelez le dépôt ou le livreur, payez en espèces ou Mobile Money.</span></div></li>
+      </ul>
+      <a class="btn primary lg" href="#/demande">♻️ Faire une demande</a></div>
+  </div></section>
+
+  ${servicesSection()}
+
+  <section class="wrap section tight"><div class="mosaic">
+    <figure class="reveal"><img src="/img/cuisine.jpg" alt="Une cuisinière souriante prépare le repas" loading="lazy"><figcaption>Le gaz de tous les jours<small>Pour la maison, le maquis ou le restaurant</small></figcaption></figure>
+    <figure class="reveal d1"><img src="/img/bouteilles.jpg" alt="Des bouteilles de gaz orange alignées" loading="lazy"><figcaption>Toutes les marques<small>${esc(brands.join(' · ') || 'Oryx · Total · Tradex')}</small></figcaption></figure>
+    <figure class="reveal d2"><img src="/img/scooter-ville.jpg" alt="Un livreur à moto traverse la ville" loading="lazy"><figcaption>Livré en ville<small>Par les livreurs du dépôt le plus proche</small></figcaption></figure>
+  </div></section>
+
+  <section class="dark-band section" id="distributeurs"><div class="wrap">
+    <div class="story">
+      <div class="reveal">${Art.dashboard()}</div>
+      <div class="reveal d1"><span class="kicker">Pour les distributeurs</span>
+        <h2 class="section-title">Vos dépôts visibles. Vos clients servis plus vite.</h2>
+        <ul class="checks">
+          <li>Apparaissez dans la recherche avec vos marques, vos prix et vos stocks</li>
+          <li>Recevez les demandes des clients proches de vos dépôts</li>
+          <li>Assignez vos livreurs et suivez chaque commande en temps réel</li>
+          <li>Pilotez votre chiffre d'affaires ville par ville</li>
+        </ul>
+        <a class="btn primary lg" href="#/devenir-distributeur">Créer mon espace distributeur</a></div>
+    </div>
+    <div class="grid g3" style="margin-top:56px">${plansGrid(plans)}</div>
+  </div></section>
+
+  <section class="wrap section"><div class="final-cta reveal">
+    <h2>Votre bouteille est vide ?</h2><p>Trouvez le point de vente le plus proche en quelques secondes.</p>
+    <a class="btn lg" href="#/" id="totop">🔍 Trouver du gaz maintenant</a>
+  </div></section>`;
 }
 
 /** Accueil client : recherche par marque, points de vente du plus proche au plus loin. */
 async function pageSearch(params) {
   const pageId = routeSeq;
+  const guest = !state.me;
   let query = params.get('q') || '';
   let cityId = params.get('ville') || '';
-  const [brands, extra] = await Promise.all([api('GET', '/api/brands'), state.me ? '' : plansSection()]);
+  const [brands, stats, plans] = await Promise.all([
+    api('GET', '/api/brands'), api('GET', '/api/stats/public'), guest ? api('GET', '/api/plans') : [],
+  ]);
   if (pageId !== routeSeq) return; // page quittée entre-temps
+  const rot = brands.length ? brands : ['Oryx', 'Total', 'Tradex'];
+  const first = state.me ? esc(state.me.user.name.split(' ')[0]) : '';
+  view.className = 'landing';
   view.innerHTML = `
-    <section class="search-hero">
-      <h1>Quel gaz cherchez-vous ?</h1>
-      <p class="muted">Tapez votre marque : les points de vente qui l'ont s'affichent, du plus proche au plus loin.</p>
-      <form class="searchbox" id="sf" role="search">
-        <div class="q"><input id="q" type="search" value="${esc(query)}" placeholder="Oryx, Total 12,5 kg, Tradex…" autocomplete="off" aria-label="Marque ou produit"></div>
-        <select id="sc" aria-label="Ville"><option value="">Toutes les villes</option>${cityOptions(cityId, (c) => c.providers > 0)}</select>
-        <button type="button" class="btn" id="geo">📍 Autour de moi</button>
-      </form>
-      <div class="chips">${brands.map((b) => `<button type="button" class="chip" data-brand="${esc(b)}">${esc(b)}</button>`).join('')}</div>
-      <div class="geo-note" id="geonote"></div>
+    <section class="hero ${guest ? '' : 'compact'}">
+      <div class="wrap hero-grid">
+        <div>
+          <span class="eyebrow"><b>Live</b> ${stats.points} points de vente · ${stats.cities} villes</span>
+          <h1>${guest
+            ? `Votre gaz <span class="rotator" aria-live="off">${rot.map((b, i) => `<span class="${i ? '' : 'on'}">${esc(b)}</span>`).join('')}</span><br>trouvé et livré.`
+            : `Bonjour ${first},<br><span class="grad">quel gaz cherchez-vous ?</span>`}</h1>
+          <p class="lead">Tapez votre marque : les points de vente qui l'ont s'affichent, du plus proche au plus loin. Commandez ou demandez une recharge en un clic.</p>
+          <form class="searchbox" id="sf" role="search">
+            <div class="q"><input id="q" type="search" value="${esc(query)}" placeholder="Oryx, Total 12,5 kg, Tradex…" autocomplete="off" aria-label="Marque ou produit"></div>
+            <select id="sc" aria-label="Ville"><option value="">Toutes les villes</option>${cityOptions(cityId, (c) => c.providers > 0)}</select>
+            <button type="button" class="btn primary" id="geo">📍 Autour de moi</button>
+          </form>
+          <div class="chips">${brands.map((b) => `<button type="button" class="chip" data-brand="${esc(b)}">${esc(b)}</button>`).join('')}</div>
+          <div class="geo-note" id="geonote"></div>
+        </div>
+        <div class="hero-art">${Art.hero()}</div>
+      </div>
+      <svg class="hero-wave" viewBox="0 0 1440 70" preserveAspectRatio="none" aria-hidden="true"><path d="M0 38 C 240 78 480 0 720 22 S 1200 70 1440 28 V70 H0Z"/></svg>
     </section>
-    <div class="results"><div id="list" class="stack"></div><div id="map" role="region" aria-label="Carte des points de vente"></div></div>
-    <div class="card cta" style="margin-top:16px">
-      <div><b>Pas le temps de chercher ?</b><br><span class="muted small">Faites une demande de recharge : les distributeurs proches la reçoivent, l'un d'eux vous contacte et vient livrer ou chercher votre bouteille.</span></div>
-      <a class="btn primary" id="cta" href="#/demande">♻️ Faire une demande</a>
-    </div>
-    ${extra}`;
+    <section class="wrap results-wrap" id="results">
+      <div class="results"><div id="list" class="stack"></div><div id="map" role="region" aria-label="Carte des points de vente"></div></div>
+      <div class="card cta" style="margin-top:16px">
+        <div><b>Pas le temps de chercher ?</b><br><span class="muted small">Faites une demande de recharge : les distributeurs proches la reçoivent, l'un d'eux vous contacte et vient livrer ou chercher votre bouteille.</span></div>
+        <a class="btn primary" id="cta" href="#/demande">♻️ Faire une demande</a>
+      </div>
+    </section>
+    ${guest ? landingSections(stats, plans, brands) : servicesSection()}
+    ${footer()}`;
+
+  // Marque qui défile dans le titre.
+  if (guest && !REDUCED && rot.length > 1) {
+    let i = 0;
+    const spans = $$('.rotator span');
+    const tick = () => {
+      if (pageId !== routeSeq || !spans[0].isConnected) return;
+      const cur = spans[i];
+      i = (i + 1) % spans.length;
+      cur.classList.replace('on', 'out');
+      spans[i].classList.remove('out');
+      spans[i].classList.add('on');
+      setTimeout(() => cur.classList.remove('out'), 650);
+      setTimeout(tick, 2400);
+    };
+    setTimeout(tick, 2400);
+  }
+  $('#totop')?.addEventListener('click', (e) => { e.preventDefault(); window.scrollTo({ top: 0, behavior: REDUCED ? 'auto' : 'smooth' }); setTimeout(() => $('#q')?.focus(), 500); });
 
   if (searchMap) { searchMap.remove(); searchMap = null; }
   const hasMap = typeof window.L !== 'undefined';
   if (!hasMap) { $('#map').style.display = 'none'; $('.results').style.gridTemplateColumns = '1fr'; }
   let markers = {};
   let seq = 0;
+  let showAll = false;
 
   const note = () => {
     $('#geonote').textContent = state.pos ? '📍 Résultats triés selon votre position.' : 'Astuce : touchez « Autour de moi » pour voir le point de vente le plus proche.';
+  };
+  const showResults = () => {
+    const r = $('#results');
+    if (r && r.getBoundingClientRect().top > window.innerHeight * 0.75) r.scrollIntoView({ behavior: REDUCED ? 'auto' : 'smooth', block: 'start' });
   };
 
   const draw = (results) => {
     const list = $('#list');
     const where = cityId ? ` à ${esc(state.cities.find((c) => String(c.id) === String(cityId))?.name || '')}` : '';
+    list.classList.remove('stagger'); void list.offsetWidth; list.classList.add('stagger');
     if (!results.length) {
-      list.innerHTML = `<div class="card empty">Aucun point de vente${query ? ` n'a « ${esc(query)} »` : ''}${where}.<br>
-        Essayez une autre marque, ou <a href="${$('#cta').getAttribute('href')}">faites une demande</a> : les distributeurs vous répondront.</div>`;
+      list.innerHTML = `<div class="card">${emptyBox(`<b>Aucun point de vente${query ? ` n'a « ${esc(query)} »` : ''}${where}.</b><br>
+        Essayez une autre marque, ou <a href="${$('#cta').getAttribute('href')}">faites une demande</a> : les distributeurs vous répondront.`)}</div>`;
     } else {
       const nearest = results.find((p) => p.available && p.distance_km != null);
-      list.innerHTML = `<div class="muted small">${results.length} point(s) de vente${query ? ` avec « ${esc(query)} »` : ''}${where}</div>`
-        + results.map((p) => {
+      const LIMIT = 4;
+      const visible = showAll || query || results.length <= LIMIT + 1 ? results : results.slice(0, LIMIT);
+      list.innerHTML = `<div class="results-head"><b>${results.length} point(s) de vente${query ? ` avec « ${esc(query)} »` : ''}${where}</b>
+          ${state.pos ? '<span class="small muted">du plus proche au plus loin</span>' : ''}</div>`
+        + visible.map((p) => {
           const shown = p.products.slice(0, 5);
           const brand = p.products.find((o) => o.in_stock)?.brand || p.products[0]?.brand || '';
-          return `<div class="card point ${p.available ? '' : 'off'}" data-pt="${p.id}">
+          return `<div class="card point lift ${p.available ? '' : 'off'}" data-pt="${p.id}">
             <div class="head"><div><b>${esc(p.name)}</b> ${p === nearest ? '<span class="badge near">Le plus proche</span>' : ''}<br>
               <span class="small muted">${esc(p.tenant_name)} · ${esc(p.address)}, ${esc(p.city_name)}</span></div>
               <div class="right">${p.distance_km != null ? `<div class="dist">${km(p.distance_km)}</div>` : ''}
@@ -202,8 +389,10 @@ async function pageSearch(params) {
               <a class="btn sm primary" href="#/commander?ville=${p.city_id}">🛵 Me faire livrer</a>
               <a class="btn sm" href="#/demande?ville=${p.city_id}${brand ? `&marque=${encodeURIComponent(brand)}` : ''}">♻️ Demande de recharge</a>
             </div></div>`;
-        }).join('');
+        }).join('')
+        + (visible.length < results.length ? `<button type="button" class="btn" id="more" style="width:100%">Voir les ${results.length} points de vente ↓</button>` : '');
     }
+    $('#more')?.addEventListener('click', () => { showAll = true; draw(results); });
     $$('.point').forEach((el) => el.addEventListener('click', (e) => {
       if (e.target.closest('a')) return;
       const m = markers[el.dataset.pt];
@@ -211,9 +400,9 @@ async function pageSearch(params) {
       $$('.point.sel').forEach((x) => x.classList.remove('sel'));
       el.classList.add('sel');
     }));
+    observeMotion(list);
     if (hasMap) drawMap(results);
   };
-
   const drawMap = (results) => {
     if (!searchMap) {
       searchMap = L.map('map', { scrollWheelZoom: false }).setView([7.5, -2], 4);
@@ -271,16 +460,16 @@ async function pageSearch(params) {
 
   let timer;
   $('#q').addEventListener('input', (e) => { clearTimeout(timer); timer = setTimeout(() => { query = e.target.value.trim(); run(); }, 250); });
-  $('#sf').addEventListener('submit', (e) => { e.preventDefault(); query = $('#q').value.trim(); run(); });
+  $('#sf').addEventListener('submit', async (e) => { e.preventDefault(); query = $('#q').value.trim(); await run(); showResults(); });
   $('#sc').addEventListener('change', (e) => { cityId = e.target.value; run(); });
   $$('.chip').forEach((c) => c.addEventListener('click', () => {
     query = c.classList.contains('on') ? '' : c.dataset.brand;
     $('#q').value = query;
-    run();
+    run().then(showResults);
   }));
   $('#geo').addEventListener('click', async () => {
     $('#geonote').textContent = 'Localisation en cours…';
-    try { await locate(); cityId = ''; $('#sc').value = ''; run(); } catch (e) { toast(e.message, true); note(); }
+    try { await locate(); cityId = ''; $('#sc').value = ''; await run(); showResults(); } catch (e) { toast(e.message, true); note(); }
   });
 
   await run();
@@ -297,13 +486,19 @@ const DEMO = `<div class="demo">Comptes de démonstration (mot de passe <b>demo1
 function pageLogin(params) {
   const tab = params.get('tab') || 'login';
   view.innerHTML = `
-    <div class="card auth">
+    <div class="auth-split">
+     <div class="auth-art">
+       <div><h2>${tab === 'login' ? 'Content de vous revoir 👋' : 'Bienvenue sur GazFlow'}</h2>
+         <p>Trouvez votre gaz au dépôt le plus proche, demandez une recharge et suivez votre livreur en direct.</p></div>
+       ${Art.hero()}
+     </div>
+     <div class="auth-form">
       <div class="tabs"><button data-tab="login" class="${tab === 'login' ? 'on' : ''}">Connexion</button><button data-tab="register" class="${tab === 'register' ? 'on' : ''}">Créer un compte client</button></div>
       ${tab === 'login' ? `
         <form id="f">
           <div class="field"><label>Email</label><input name="email" type="email" required autocomplete="email"></div>
           <div class="field"><label>Mot de passe</label><input name="password" type="password" required autocomplete="current-password"></div>
-          <button class="btn primary" style="width:100%">Se connecter</button>
+          <button class="btn primary lg" style="width:100%">Se connecter</button>
         </form>
         <p></p>${DEMO}` : `
         <form id="f">
@@ -314,6 +509,7 @@ function pageLogin(params) {
           <div class="field"><label>Mot de passe (8 caractères min.)</label><input name="password" type="password" minlength="8" required></div>
           <button class="btn primary" style="width:100%">Créer mon compte</button>
         </form>`}
+     </div>
     </div>`;
   $$('[data-tab]').forEach((b) => b.addEventListener('click', () => { location.hash = `#/connexion?tab=${b.dataset.tab}${params.get('next') ? `&next=${encodeURIComponent(params.get('next'))}` : ''}`; }));
   $$('[data-demo]').forEach((c) => c.addEventListener('click', () => { $('[name=email]').value = c.dataset.demo; $('[name=password]').value = 'demo1234'; }));
@@ -473,14 +669,14 @@ async function pageOrder(params) {
 
 // ---------- Listes de commandes ----------
 function ordersTable(orders, { showCustomer = false, showTenant = false } = {}) {
-  if (!orders.length) return '<div class="empty">Aucune commande pour le moment.</div>';
-  return `<div class="table-wrap"><table><thead><tr><th>Réf.</th><th>Date</th>${showTenant ? '<th>Distributeur</th>' : ''}${showCustomer ? '<th>Client</th>' : ''}
+  if (!orders.length) return emptyBox('Aucune commande pour le moment.');
+  return `<div class="table-wrap"><table class="cards"><thead><tr><th>Réf.</th><th>Date</th>${showTenant ? '<th>Distributeur</th>' : ''}${showCustomer ? '<th>Client</th>' : ''}
     <th>Ville</th><th class="hide-sm">Articles</th><th>Total</th><th>Statut</th>${showCustomer ? '<th class="hide-sm">Livreur</th>' : ''}</tr></thead><tbody>
-    ${orders.map((o) => `<tr class="click" data-id="${o.id}"><td><b>${esc(o.ref)}</b></td><td class="small">${date(o.created_at)}</td>
-      ${showTenant ? `<td>${esc(o.tenant_name)}</td>` : ''}${showCustomer ? `<td>${esc(o.customer_name)}<br><span class="small muted">${esc(o.phone)}</span></td>` : ''}
-      <td>${esc(o.city_name)}</td><td class="small hide-sm">${esc(o.summary)}</td><td class="price">${money(o.total, o.currency)}</td>
-      <td>${badge(o.status, o.status_label)}<br>${payBadge(o.payment_status)}</td>
-      ${showCustomer ? `<td class="small hide-sm">${esc(o.driver_name || '—')}</td>` : ''}</tr>`).join('')}
+    ${orders.map((o) => `<tr class="click" data-id="${o.id}"><td data-label="Réf."><b>${esc(o.ref)}</b></td><td data-label="Date" class="small">${date(o.created_at)}</td>
+      ${showTenant ? `<td data-label="Distributeur">${esc(o.tenant_name)}</td>` : ''}${showCustomer ? `<td data-label="Client">${esc(o.customer_name)}<br><span class="small muted">${esc(o.phone)}</span></td>` : ''}
+      <td data-label="Ville">${esc(o.city_name)}</td><td data-label="Articles" class="small hide-sm">${esc(o.summary)}</td><td data-label="Total" class="price">${money(o.total, o.currency)}</td>
+      <td data-label="Statut">${badge(o.status, o.status_label)} ${payBadge(o.payment_status)}</td>
+      ${showCustomer ? `<td data-label="Livreur" class="small hide-sm">${esc(o.driver_name || '—')}</td>` : ''}</tr>`).join('')}
     </tbody></table></div>`;
 }
 const bindRows = () => $$('tr[data-id]').forEach((r) => r.addEventListener('click', () => { location.hash = `#/commande/${r.dataset.id}`; }));
@@ -525,7 +721,10 @@ async function pageOrderDetail(id) {
   view.innerHTML = `
     <a href="javascript:history.back()" class="small">← Retour</a>
     <div class="row between"><h1>Commande ${esc(o.ref)}</h1><div class="row">${badge(o.status, o.status_label)} ${payBadge(o.payment_status)}</div></div>
-    ${step >= 0 ? `<div class="steps">${FLOW.map((_, i) => `<div class="${i <= step ? 'on' : ''}"></div>`).join('')}</div>` : ''}
+    ${step >= 0 ? `<div class="track" data-step="${step}" aria-label="Avancement : ${esc(o.status_label)}">
+        <div class="rider">${Art.miniScooter()}</div><div class="rail"><div class="fill"></div></div>
+        <div class="labels">${['Reçue', 'Confirmée', 'Livreur', 'En route', 'Livrée'].map((l, i) => `<span class="${i === step ? 'on' : ''}">${l}</span>`).join('')}</div>
+      </div>` : ''}
     <div class="grid g2">
       <div class="card stack">
         <div><h3>${esc(SERVICE_LABEL[o.service] || 'Livraison')}</h3>
@@ -550,16 +749,26 @@ async function pageOrderDetail(id) {
           <div class="small muted">${date(e.created_at)}${e.by_name ? ` · ${esc(e.by_name)}` : ''}</div>${e.note ? `<div class="small">${esc(e.note)}</div>` : ''}</li>`).join('')}
       </ul></div>
     </div>`;
+  // Le scooter avance jusqu'à l'étape courante.
+  const track = $('.track');
+  if (track) {
+    const pct = (Number(track.dataset.step) / (FLOW.length - 1)) * 100;
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      $('.fill', track).style.width = `${pct}%`;
+      $('.rider', track).style.left = `${pct}%`;
+      $('.rider', track).style.transform = `translateX(-${pct}%)`; // reste dans la barre aux extrémités
+    }));
+  }
   $$('[data-status]').forEach((b) => b.addEventListener('click', async () => {
     if (b.dataset.status === 'annulee' && !confirm('Annuler cette commande ?')) return;
-    try { await api('POST', `/api/orders/${o.id}/status`, { status: b.dataset.status }); toast('Statut mis à jour'); route(); } catch (e) { toast(e.message, true); }
+    try { await api('POST', `/api/orders/${o.id}/status`, { status: b.dataset.status }); toast('Statut mis à jour'); refresh(); } catch (e) { toast(e.message, true); }
   }));
   $('#assign')?.addEventListener('submit', async (e) => {
     e.preventDefault();
-    try { await api('POST', `/api/orders/${o.id}/assign`, formData(e.target)); toast('Livreur assigné'); route(); } catch (err) { toast(err.message, true); }
+    try { await api('POST', `/api/orders/${o.id}/assign`, formData(e.target)); toast('Livreur assigné'); refresh(); } catch (err) { toast(err.message, true); }
   });
-  $('#paid')?.addEventListener('click', async () => { await api('POST', `/api/orders/${o.id}/paid`); toast('Paiement enregistré'); route(); });
-  if (['en_attente', 'confirmee', 'assignee', 'en_livraison'].includes(o.status)) refreshTimer = setTimeout(route, 30000);
+  $('#paid')?.addEventListener('click', async () => { await api('POST', `/api/orders/${o.id}/paid`); toast('Paiement enregistré'); refresh(); });
+  if (['en_attente', 'confirmee', 'assignee', 'en_livraison'].includes(o.status)) refreshTimer = setTimeout(refresh, 30000);
 }
 
 // ---------- Livreur ----------
@@ -570,7 +779,7 @@ async function pageDriver() {
   const done = orders.filter((o) => !['assignee', 'en_livraison'].includes(o.status));
   if (pageId !== routeSeq) return; // page quittée entre-temps
   view.innerHTML = `<h1>Mes livraisons</h1>
-    <div class="stack">${open.length ? open.map((o) => `
+    <div class="stack stagger">${open.length ? open.map((o) => `
       <div class="card"><div class="row between"><b>${esc(o.ref)}</b>${badge(o.status, o.status_label)}</div>
         ${o.service && o.service !== 'livraison' ? `<div><b>${SERVICE[o.service][0]} ${SERVICE_LABEL[o.service]}</b></div>` : ''}
         <div>${esc(o.address)}, ${esc(o.city_name)}</div>
@@ -580,14 +789,14 @@ async function pageDriver() {
           <a class="btn sm" target="_blank" rel="noopener" href="${directions(o.lat, o.lng, `${o.address}, ${o.city_name}`)}">🗺️ Itinéraire</a>
           ${o.status === 'assignee' ? `<button class="btn sm primary" data-go="${o.id}" data-s="en_livraison">Démarrer</button>` : `<button class="btn sm ok" data-go="${o.id}" data-s="livree">Livrée ✓</button>`}
           <a class="btn sm" href="#/commande/${o.id}">Détails</a>
-        </div></div>`).join('') : '<div class="card empty">Aucune livraison en attente. 🎉</div>'}
+        </div></div>`).join('') : `<div class="card">${emptyBox('Aucune livraison en attente. 🎉')}</div>`}
       <div class="card"><h2>Historique</h2>${ordersTable(done)}</div>
     </div>`;
   bindRows();
   $$('[data-go]').forEach((b) => b.addEventListener('click', async () => {
-    try { await api('POST', `/api/orders/${b.dataset.go}/status`, { status: b.dataset.s }); toast('Statut mis à jour'); route(); } catch (e) { toast(e.message, true); }
+    try { await api('POST', `/api/orders/${b.dataset.go}/status`, { status: b.dataset.s }); toast('Statut mis à jour'); refresh(); } catch (e) { toast(e.message, true); }
   }));
-  refreshTimer = setTimeout(route, 20000);
+  refreshTimer = setTimeout(refresh, 20000);
 }
 
 // ---------- Distributeur ----------
@@ -626,7 +835,7 @@ async function pageAdminOrders(params) {
     <div class="card">${ordersTable(orders, { showCustomer: true })}</div>`;
   $$('[data-st]').forEach((b) => b.addEventListener('click', () => { location.hash = `#/admin/commandes${b.dataset.st ? `?statut=${b.dataset.st}` : ''}`; }));
   bindRows();
-  refreshTimer = setTimeout(route, 20000);
+  refreshTimer = setTimeout(refresh, 20000);
 }
 
 async function pageAdminCatalog() {
@@ -669,11 +878,11 @@ async function pageAdminCatalog() {
     } catch (e) { toast(e.message, true); }
   }));
   $$('[data-toggle]').forEach((b) => b.addEventListener('click', async () => {
-    await api('PATCH', `/api/admin/products/${b.dataset.toggle}`, { active: b.dataset.active !== '1' }); route();
+    await api('PATCH', `/api/admin/products/${b.dataset.toggle}`, { active: b.dataset.active !== '1' }); refresh();
   }));
   $('#newp').addEventListener('submit', async (e) => {
     e.preventDefault();
-    try { await api('POST', '/api/admin/products', formData(e.target)); toast('Produit ajouté'); route(); } catch (err) { toast(err.message, true); }
+    try { await api('POST', '/api/admin/products', formData(e.target)); toast('Produit ajouté'); refresh(); } catch (err) { toast(err.message, true); }
   });
 }
 
@@ -719,7 +928,7 @@ async function pageAdminZones() {
     e.preventDefault();
     const d = formData(e.target);
     if (!d.city_id) delete d.city_id;
-    try { await api('POST', '/api/admin/zones', d); await loadCities(); toast('Ville ajoutée'); route(); } catch (err) { toast(err.message, true); }
+    try { await api('POST', '/api/admin/zones', d); await loadCities(); toast('Ville ajoutée'); refresh(); } catch (err) { toast(err.message, true); }
   });
 }
 
@@ -748,13 +957,13 @@ async function pageAdminDrivers() {
       <button class="btn primary">Créer le compte livreur</button>
     </form>`;
   $$('[data-d]').forEach((b) => b.addEventListener('click', async () => {
-    try { await api('PATCH', `/api/admin/drivers/${b.dataset.d}`, { active: b.dataset.a !== '1' }); route(); } catch (e) { toast(e.message, true); }
+    try { await api('PATCH', `/api/admin/drivers/${b.dataset.d}`, { active: b.dataset.a !== '1' }); refresh(); } catch (e) { toast(e.message, true); }
   }));
   $('#newd').addEventListener('submit', async (e) => {
     e.preventDefault();
     const d = formData(e.target);
     if (!d.city_id) delete d.city_id;
-    try { await api('POST', '/api/admin/drivers', d); toast('Livreur créé'); route(); } catch (err) { toast(err.message, true); }
+    try { await api('POST', '/api/admin/drivers', d); toast('Livreur créé'); refresh(); } catch (err) { toast(err.message, true); }
   });
 }
 
@@ -770,7 +979,7 @@ async function pageAdminPlan() {
       ${p.id === current ? '<span class="badge s-livree">Offre actuelle</span>' : `<button class="btn" data-plan="${p.id}">Passer à ${esc(p.label)}</button>`}
     </div>`).join('')}</div>`;
   $$('[data-plan]').forEach((b) => b.addEventListener('click', async () => {
-    try { await api('PATCH', '/api/admin/plan', { plan: b.dataset.plan }); await loadMe(); toast('Offre mise à jour'); route(); } catch (e) { toast(e.message, true); }
+    try { await api('PATCH', '/api/admin/plan', { plan: b.dataset.plan }); await loadMe(); toast('Offre mise à jour'); refresh(); } catch (e) { toast(e.message, true); }
   }));
 }
 
@@ -794,10 +1003,10 @@ async function pagePlatform() {
         <td><button class="btn sm ${t.active ? 'danger' : 'ok'}" data-act="${t.id}" data-a="${t.active}">${t.active ? 'Suspendre' : 'Réactiver'}</button></td></tr>`).join('')}
     </tbody></table></div></div>`;
   $$('[data-plan]').forEach((s) => s.addEventListener('change', async () => {
-    await api('PATCH', `/api/platform/tenants/${s.dataset.plan}`, { plan: s.value }); toast('Offre modifiée'); route();
+    await api('PATCH', `/api/platform/tenants/${s.dataset.plan}`, { plan: s.value }); toast('Offre modifiée'); refresh();
   }));
   $$('[data-act]').forEach((b) => b.addEventListener('click', async () => {
-    await api('PATCH', `/api/platform/tenants/${b.dataset.act}`, { active: b.dataset.a !== '1' }); await loadCities(); route();
+    await api('PATCH', `/api/platform/tenants/${b.dataset.act}`, { active: b.dataset.a !== '1' }); await loadCities(); refresh();
   }));
 }
 
@@ -830,7 +1039,7 @@ async function pageRequest(params) {
   const brands = await api('GET', '/api/brands');
   const cityId = params.get('ville') || draft.city_id || state.me?.user.city_id || '';
   let pos = draft.lat != null && draft.lat !== '' ? { lat: draft.lat, lng: draft.lng } : state.pos;
-  const service = draft.service || 'echange';
+  const service = SERVICE[params.get('service')] ? params.get('service') : (draft.service || 'echange');
   if (pageId !== routeSeq) return; // page quittée entre-temps
   view.innerHTML = `
     <div class="grid g2" style="align-items:start">
@@ -893,7 +1102,7 @@ async function pageRequest(params) {
     const mine = await api('GET', '/api/requests');
     const box = $('#reqlist');
     if (!box || pageId !== routeSeq) return;
-    box.innerHTML = mine.length ? mine.map(requestCard).join('') : '<div class="card empty">Aucune demande pour le moment.</div>';
+    box.innerHTML = mine.length ? mine.map(requestCard).join('') : `<div class="card">${emptyBox('Aucune demande pour le moment.')}</div>`;
     $$('[data-cancel]', box).forEach((b) => b.addEventListener('click', async () => {
       if (!confirm('Annuler cette demande ?')) return;
       try { await api('POST', `/api/requests/${b.dataset.cancel}/cancel`); toast('Demande annulée'); refreshList(); } catch (err) { toast(err.message, true); }
@@ -914,7 +1123,7 @@ async function pageAdminRequests() {
   if (pageId !== routeSeq) return; // page quittée entre-temps
   view.innerHTML = `<h1>Demandes des clients</h1>
     <p class="muted">Demandes publiées dans vos villes ces dernières 48 h, les plus proches de vos points de vente en premier. Le premier distributeur qui accepte obtient la commande et les coordonnées du client.</p>
-    <div class="stack">${open.length ? open.map((r) => {
+    <div class="stack stagger">${open.length ? open.map((r) => {
       const usable = r.options.filter((o) => o.stock >= r.qty);
       return `<div class="card req ouverte">
         <div class="row between"><b>${wantLabel(r)}</b><span class="small muted">${ago(r.created_at)}</span></div>
@@ -925,7 +1134,7 @@ async function pageAdminRequests() {
           <button class="btn primary">Prendre la demande</button></form>`
         : '<p class="small" style="color:var(--danger)">Aucun produit adapté en stock dans cette ville.</p>'}
       </div>`;
-    }).join('') : '<div class="card empty">Aucune demande en attente dans vos villes. Cette page se met à jour toute seule.</div>'}</div>
+    }).join('') : `<div class="card">${emptyBox('Aucune demande en attente dans vos villes.<br>Cette page se met à jour toute seule.')}</div>`}</div>
     <h2 style="margin-top:24px">Demandes que vous avez prises</h2>
     <div class="card">${accepted.length ? `<div class="table-wrap"><table><thead><tr><th>Quand</th><th>Demande</th><th>Client</th><th>Commande</th></tr></thead><tbody>
       ${accepted.map((r) => `<tr class="click" data-id="${r.order_id}"><td class="small">${ago(r.created_at)}</td><td>${wantLabel(r)}</td>
@@ -939,9 +1148,9 @@ async function pageAdminRequests() {
       const order = await api('POST', `/api/requests/${f.dataset.accept}/accept`, formData(f));
       toast('Demande prise ! Assignez maintenant un livreur.');
       location.hash = `#/commande/${order.id}`;
-    } catch (err) { toast(err.message, true); route(); }
+    } catch (err) { toast(err.message, true); refresh(); }
   }));
-  refreshTimer = setTimeout(route, 30000);
+  refreshTimer = setTimeout(refresh, 30000);
 }
 
 // ---------- Distributeur : points de vente ----------
@@ -1006,14 +1215,14 @@ async function pageAdminPoints() {
   });
   $('#newpt').addEventListener('submit', async (e) => {
     e.preventDefault();
-    try { await api('POST', '/api/admin/points', formData(e.target)); toast('Point de vente ajouté'); route(); } catch (err) { toast(err.message, true); }
+    try { await api('POST', '/api/admin/points', formData(e.target)); toast('Point de vente ajouté'); refresh(); } catch (err) { toast(err.message, true); }
   });
   $$('[data-pt]').forEach((b) => b.addEventListener('click', async () => {
-    await api('PATCH', `/api/admin/points/${b.dataset.pt}`, { active: b.dataset.a !== '1' }); route();
+    await api('PATCH', `/api/admin/points/${b.dataset.pt}`, { active: b.dataset.a !== '1' }); refresh();
   }));
   $$('[data-del]').forEach((b) => b.addEventListener('click', async () => {
     if (!confirm('Supprimer ce point de vente ?')) return;
-    await api('DELETE', `/api/admin/points/${b.dataset.del}`); toast('Point supprimé'); route();
+    await api('DELETE', `/api/admin/points/${b.dataset.del}`); toast('Point supprimé'); refresh();
   }));
 }
 
@@ -1024,10 +1233,20 @@ async function loadMe() {
 }
 async function loadCities() { state.cities = await api('GET', '/api/cities'); }
 
-async function route() {
+/** Recharge la page courante sans transition (mises à jour automatiques, après une action). */
+const refresh = () => route(true);
+
+async function route(quiet = false) {
   clearTimeout(refreshTimer);
   routeSeq++;
   const seq = routeSeq;
+  document.body.classList.toggle('menu-open', false);
+  $('#burger')?.setAttribute('aria-expanded', 'false');
+  if (!quiet) {
+    view.className = 'container';
+    view.innerHTML = SKELETON;
+    window.scrollTo(0, 0);
+  }
   const [path, qs] = (location.hash.slice(1) || '/').split('?');
   const params = new URLSearchParams(qs || '');
   const role = state.me?.user.role;
@@ -1055,13 +1274,20 @@ async function route() {
     if (path === '/admin/livreurs') return guard('admin') && await pageAdminDrivers();
     if (path === '/admin/abonnement') return guard('admin') && await pageAdminPlan();
     if (path === '/plateforme') return guard('superadmin') && await pagePlatform();
-    view.innerHTML = '<div class="card empty">Page introuvable. <a href="#/">Accueil</a></div>';
+    view.innerHTML = `<div class="card">${emptyBox('Page introuvable. <a href="#/">Retour à l’accueil</a>')}</div>`;
   } catch (e) {
-    if (seq === routeSeq) view.innerHTML = `<div class="card empty">${esc(e.message)}</div>`;
+    if (seq === routeSeq) view.innerHTML = `<div class="card">${emptyBox(esc(e.message))}</div>`;
+  } finally {
+    if (seq === routeSeq) { if (quiet) observeMotion(); else enterPage(); }
   }
 }
 
-window.addEventListener('hashchange', route);
+window.addEventListener('hashchange', () => route());
+$('#burger')?.addEventListener('click', () => {
+  const open = document.body.classList.toggle('menu-open');
+  $('#burger').setAttribute('aria-expanded', String(open));
+});
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') document.body.classList.toggle('menu-open', false); });
 (async () => {
   await Promise.all([loadCities(), loadMe()]);
   route();
