@@ -1,0 +1,10 @@
+# Déploiement Netlify : site statique (public/) + serveur Express (netlify/server) + base Netlify DB.
+[build]
+  publish = "public"
+  command = "npm test"
+
+[build.environment]
+  NODE_VERSION = "24"
+
+[server]
+  region = "fra"

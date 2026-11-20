@@ -1,21 +1,24 @@
 'use strict';
 const { test, before, after } = require('node:test');
 const assert = require('node:assert/strict');
-const { openDb, seed } = require('../src/db');
+const { openDb } = require('../src/db');
 const { createApp } = require('../src/app');
 
 let server;
 let base;
 let db;
 
+let cities = {};
+const stockOf = async (offerId) => (await db.get('SELECT stock FROM offers WHERE id = ?', offerId)).stock;
+
 before(async () => {
-  db = openDb(':memory:');
-  seed(db);
+  db = await openDb({ memory: true }); // Postgres embarqué, migrations (schéma + démo) appliquées
+  for (const c of await db.all('SELECT id, name FROM cities')) cities[c.name] = c.id;
   server = createApp(db).listen(0);
   await new Promise((r) => server.once('listening', r));
   base = `http://127.0.0.1:${server.address().port}`;
 });
-after(() => server.close());
+after(async () => { server.close(); await db.close(); });
 
 async function api(method, path, body, token) {
   const res = await fetch(base + path, {
@@ -26,7 +29,7 @@ async function api(method, path, body, token) {
   return { status: res.status, body: await res.json() };
 }
 const loginAs = async (email) => (await api('POST', '/api/auth/login', { email, password: 'demo1234' })).body.token;
-const cityId = (name) => db.prepare('SELECT id FROM cities WHERE name = ?').get(name).id;
+const cityId = (name) => cities[name];
 
 test('login refuse un mauvais mot de passe', async () => {
   const r = await api('POST', '/api/auth/login', { email: 'client@demo.app', password: 'nope' });
@@ -58,7 +61,7 @@ test('cycle complet : commande → confirmation → assignation → livraison', 
   const o = created.body;
   assert.equal(o.total, offer.price * 2 + cat.delivery_fee);
   assert.equal(o.status, 'en_attente');
-  const stockAfter = db.prepare('SELECT stock FROM offers WHERE id = ?').get(offer.offer_id).stock;
+  const stockAfter = await stockOf(offer.offer_id);
   assert.equal(stockAfter, offer.stock - 2);
 
   // Le livreur ne voit pas une commande non assignée.
@@ -68,7 +71,7 @@ test('cycle complet : commande → confirmation → assignation → livraison', 
   assert.equal((await api('GET', `/api/orders/${o.id}`, null, other)).status, 404);
 
   assert.equal((await api('POST', `/api/orders/${o.id}/status`, { status: 'confirmee' }, admin)).body.status, 'confirmee');
-  const driverId = db.prepare("SELECT id FROM users WHERE email = 'livreur@fasogaz.bf'").get().id;
+  const driverId = (await db.get("SELECT id FROM users WHERE email = 'livreur@fasogaz.bf'")).id;
   assert.equal((await api('POST', `/api/orders/${o.id}/assign`, { driver_id: driverId }, admin)).body.status, 'assignee');
 
   // Le client ne peut plus annuler une fois assignée.
@@ -95,7 +98,7 @@ test("annulation par le client remet le stock", async () => {
   }, client)).body;
   const r = await api('POST', `/api/orders/${o.id}/status`, { status: 'annulee' }, client);
   assert.equal(r.body.status, 'annulee');
-  assert.equal(db.prepare('SELECT stock FROM offers WHERE id = ?').get(offer.offer_id).stock, offer.stock);
+  assert.equal(await stockOf(offer.offer_id), offer.stock);
 });
 
 test('refus du stock insuffisant et des produits hors ville', async () => {
@@ -110,8 +113,8 @@ test('refus du stock insuffisant et des produits hors ville', async () => {
   }, client);
   assert.equal(big.status, 409);
   // La transaction est annulée : aucun stock n'a bougé.
-  assert.equal(db.prepare('SELECT stock FROM offers WHERE id = ?').get(scarce.offer_id).stock, before);
-  assert.equal(db.prepare('SELECT stock FROM offers WHERE id = ?').get(cat.offers[1].offer_id).stock, cat.offers[1].stock);
+  assert.equal(await stockOf(scarce.offer_id), before);
+  assert.equal(await stockOf(cat.offers[1].offer_id), cat.offers[1].stock);
   const douala = (await api('GET', `/api/catalog?city_id=${cityId('Koudougou')}`)).body[0];
   const wrong = await api('POST', '/api/orders', {
     tenant_id: cat.tenant_id, city_id: abj, address: 'Ouaga 2000, villa 12',

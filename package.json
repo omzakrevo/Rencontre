@@ -4,9 +4,9 @@
   "description": "SaaS de commande et livraison de gaz multi-villes",
   "main": "src/server.js",
   "scripts": {
-    "start": "node --no-warnings src/server.js",
-    "dev": "node --no-warnings --watch src/server.js",
-    "test": "node --no-warnings --test test/*.test.js"
+    "start": "node src/server.js",
+    "test": "node --test test/*.test.js",
+    "demo-data": "node scripts/demo-data.js > netlify/database/migrations/20261120100100_demo_data.sql"
   },
   "repository": {
     "type": "git",
@@ -17,10 +17,16 @@
   },
   "homepage": "https://github.com/omzakrevo/Rencontre#readme",
   "dependencies": {
-    "express": "^4.22.3"
+    "@netlify/database": "^2.0.3",
+    "@netlify/server": "^0.1.6",
+    "express": "^4.22.3",
+    "pg": "^8.23.1"
   },
   "private": true,
   "engines": {
-    "node": ">=22.13"
+    "node": ">=22.12"
+  },
+  "devDependencies": {
+    "@netlify/database-dev": "^1.0.2"
   }
 }
