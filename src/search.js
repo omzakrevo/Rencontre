@@ -42,6 +42,23 @@ function matches(query, text) {
   return terms.every((t) => words.some((w) => wordMatches(t, w)));
 }
 
+/**
+ * Repère les noms de villes dans la recherche, même abrégés (« Ouaga », « Bobo », « Fada »).
+ * Renvoie les villes trouvées et le reste de la requête (marque, poids…).
+ */
+function extractCities(query, cities) {
+  const ids = new Set();
+  const rest = [];
+  for (const term of normalize(query).split(' ').filter(Boolean)) {
+    const hits = term.length >= 3 && !STOP_WORDS.has(term) && !/^\d/.test(term)
+      ? cities.filter((c) => normalize(c.name).split(' ').some((w) => w.length >= 3 && w.startsWith(term)))
+      : [];
+    if (hits.length) hits.forEach((c) => ids.add(c.id));
+    else rest.push(term);
+  }
+  return { cityIds: [...ids], rest: rest.join(' ') };
+}
+
 /** Distance en km entre deux coordonnées GPS (formule de haversine). */
 function distanceKm(lat1, lng1, lat2, lng2) {
   const rad = (d) => (d * Math.PI) / 180;
@@ -50,4 +67,4 @@ function distanceKm(lat1, lng1, lat2, lng2) {
   return 6371 * 2 * Math.asin(Math.sqrt(a));
 }
 
-module.exports = { normalize, matches, distanceKm, levenshtein };
+module.exports = { normalize, matches, distanceKm, levenshtein, extractCities };

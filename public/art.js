@@ -105,7 +105,7 @@
         </g>
       </g>
       <g class="a-float">${bottle(420, 220, 1.12)}</g>
-      ${notif(14, 10, 236, check, 'Demande prise en charge', 'GazExpress · à l’instant', 'a-pop a-pop-1')}
+      ${notif(14, 10, 236, check, 'Demande prise en charge', 'Faso Gaz · à l’instant', 'a-pop a-pop-1')}
       ${notif(232, 392, 214, scooterIcon, 'Livreur à 600 m', 'Arrivée dans 6 min', 'a-pop a-pop-2')}
       <g transform="translate(520 150)"><path class="a-spark" d="M0 -10 L 3 -3 L 10 0 L 3 3 L 0 10 L -3 3 L -10 0 L -3 -3 Z" fill="#ffd166"/></g>
       <g transform="translate(30 420)"><path class="a-spark a-spark-2" d="M0 -8 L 2 -2 L 8 0 L 2 2 L 0 8 L -2 2 L -8 0 L -2 -2 Z" fill="#ffd166"/></g>

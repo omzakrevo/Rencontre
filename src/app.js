@@ -4,7 +4,7 @@ const crypto = require('node:crypto');
 const express = require('express');
 const { hashPassword, verifyPassword, createToken, readToken } = require('./auth');
 const { tx, PLANS } = require('./db');
-const { matches, distanceKm } = require('./search');
+const { matches, distanceKm, extractCities } = require('./search');
 
 const STATUS_LABELS = {
   en_attente: 'En attente',
@@ -208,10 +208,17 @@ function createApp(db) {
 
   // Recherche publique : « Oryx », « total 12 », « ori »… → points de vente qui l'ont, du plus proche au plus loin.
   app.get('/api/search', wrap((req) => {
-    const query = String(req.query.q || '').slice(0, 60);
+    let query = String(req.query.q || '').slice(0, 60);
     const lat = coord(req.query.lat, 'latitude', 90);
     const lng = coord(req.query.lng, 'longitude', 180);
     const cityId = int(req.query.city_id, 'ville', { min: 1, optional: true });
+    // « Oryx Bobo » : la ville tapée filtre les résultats, le reste cherche le produit.
+    let typedCities = [];
+    if (query) {
+      const found = extractCities(query, q('SELECT id, name FROM cities').all());
+      typedCities = found.cityIds;
+      query = found.rest;
+    }
     const points = q(`
       SELECT pt.*, c.name AS city_name, t.name AS tenant_name, t.currency, tc.delivery_fee, tc.min_delay_minutes
       FROM points pt
@@ -222,6 +229,7 @@ function createApp(db) {
     const offers = liveOffers(cityId);
     const results = [];
     for (const pt of points) {
+      if (typedCities.length && !typedCities.includes(pt.city_id)) continue;
       const all = offers.filter((o) => o.tenant_id === pt.tenant_id && o.city_id === pt.city_id);
       const products = (query ? all.filter((o) => matches(query, offerText(o))) : all)
         .map(({ tenant_id: _t, city_id: _c, stock, ...o }) => ({ ...o, in_stock: stock > 0 }));
@@ -238,7 +246,7 @@ function createApp(db) {
     results.sort((a, b) => (b.available - a.available)
       || ((a.distance_km ?? 0) - (b.distance_km ?? 0))
       || a.city_name.localeCompare(b.city_name) || a.name.localeCompare(b.name));
-    return { query, results: results.slice(0, 40) };
+    return { query, cities: typedCities, results: results.slice(0, 40) };
   }));
 
   // Chiffres publics affichés sur l'accueil (calculés sur les données réelles).

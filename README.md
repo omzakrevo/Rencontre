@@ -1,12 +1,13 @@
-# 🔥 GazFlow — SaaS de commande et livraison de gaz multi-villes
+# 🔥 GazFlow — commande et livraison de gaz au Burkina Faso
 
-GazFlow est une plateforme SaaS **multi-entreprises** : chaque distributeur de gaz s'abonne, configure ses villes, ses prix, son stock et ses livreurs. Ensuite, les clients commandent en ligne et suivent leur livraison.
+GazFlow est une plateforme SaaS **multi-entreprises**, pensée pour le **Burkina Faso** (Ouagadougou, Bobo-Dioulasso, Banfora, Koudougou…) : chaque distributeur de gaz s'abonne, configure ses villes, ses prix, son stock et ses livreurs. Ensuite, les clients commandent en ligne et suivent leur livraison.
 
 ## Pour le client : trouver du gaz en quelques secondes
 
 Dès son arrivée, le client voit une **barre de recherche** et la carte :
 
-1. Il tape sa marque, par exemple **« Oryx »**. Les fautes sont tolérées : « ori », « totale », « tradx » fonctionnent. Il peut ajouter la taille, par exemple « Total 12,5 ».
+1. Il tape sa marque, par exemple **« Oryx »**, « Sodigaz », « Total » ou « Shell ». Les fautes sont tolérées (« ori », « sodigas »), et il peut ajouter la taille (« Sodigaz 12,5 »).
+   Il peut aussi ajouter la ville, même abrégée : **« Oryx Bobo »**, « gaz Ouaga », « Sodigaz Banfora ». Des raccourcis 📍 Ouaga · Bobo · Banfora sont affichés sous la recherche.
 2. Les **points de vente qui ont cette marque** s'affichent sur la carte et en liste. Avec « 📍 Autour de moi », ils sont triés **du plus proche au plus loin** (« Le plus proche · 600 m »). Les points en rupture passent après.
 3. Sur chaque point, il peut **📞 appeler**, **🗺️ s'y rendre** (itinéraire Google Maps), **🛵 se faire livrer** ou **♻️ faire une demande de recharge**.
 
@@ -28,7 +29,7 @@ Un visiteur peut remplir une demande sans compte. Elle est conservée pendant qu
 
 - **Une page d'accueil qui présente le projet** :
   - une scène animée où les épingles tombent sur la carte, un livreur roule du dépôt à la maison et des notifications apparaissent ;
-  - un titre où la marque change (« Votre gaz Oryx / Total / Tradex… ») ;
+  - un titre où la marque change (« Votre gaz Sodigaz / Oryx / Total / Shell… ») ;
   - des chiffres réels qui défilent ;
   - les sections « Comment ça marche » et services, une mosaïque de photos et une section distributeurs avec un tableau de bord animé.
 - **Animations dans toute l'application** :
@@ -75,9 +76,16 @@ npm start          # http://localhost:3000
 npm test           # tests de l'API
 ```
 
-Au premier lancement, la base `gazflow.db` est créée avec des données de démonstration : 8 villes, 3 distributeurs, 10 points de vente géolocalisés (Abidjan, Bouaké, Dakar, Douala) et les marques Total, Oryx, Petro Ivoire et Tradex. Ces données sont des exemples.
+Au premier lancement, la base `gazflow.db` est créée avec des **données de démonstration du Burkina Faso** :
+- 12 villes : Ouagadougou, Bobo-Dioulasso, Banfora, Koudougou, Ouahigouya, Kaya, Tenkodogo, Fada N'Gourma, Dédougou, Gaoua, Dori, Ziniaré.
+- 4 distributeurs **fictifs** desservant Ouagadougou, Bobo-Dioulasso, Banfora et Koudougou.
+- 11 points de vente dans de vrais quartiers : Ouaga 2000, Zogona, Gounghin, Tampouy, Pissy, Accart-Ville, Sarfalao, Dogona, Banfora centre, Koudougou.
+- Les marques vendues au Burkina (Sodigaz, Oryx, Total, Shell), en 6 kg et 12,5 kg.
+- Des prix **indicatifs** en FCFA : recharge 12,5 kg ≈ 5 500, 6 kg ≈ 2 500, bouteille neuve 12,5 kg ≈ 22 000. Ils sont légèrement plus élevés à Bobo et Banfora.
 
-Une base créée avec une version précédente est mise à jour automatiquement au démarrage. Il faut seulement ajouter les points de vente dans « Points de vente ».
+Les noms des distributeurs, les prix et les positions GPS des dépôts sont des exemples : remplacez-les par les vrais avant le lancement. Les autres villes n'ont pas encore de distributeur. Un distributeur qui s'inscrit les ajoute dans « Villes ».
+
+Si vous aviez déjà lancé une ancienne version, supprimez le fichier `gazflow.db` pour recréer les données de démonstration du Burkina.
 
 La carte utilise Leaflet et les fonds OpenStreetMap, chargés depuis Internet. Sans connexion, la recherche fonctionne sans carte.
 
@@ -85,11 +93,13 @@ Mot de passe de tous les comptes de démonstration : **`demo1234`**
 
 | Email | Rôle |
 |---|---|
-| `client@demo.app` | Client |
-| `admin@gazexpress.ci` | Distributeur GazExpress (Abidjan, Bouaké, Dakar) |
-| `livreur@gazexpress.ci` | Livreur à Abidjan |
-| `admin@oryxpoint.ci` | Distributeur Oryx Point (Abidjan) |
-| `admin@butane.cm` | Distributeur Butane Services (Douala) |
+| `client@demo.app` | Client (Ouagadougou) |
+| `admin@fasogaz.bf` | Distributeur Faso Gaz Express (Ouagadougou, Bobo-Dioulasso, Banfora) |
+| `livreur@fasogaz.bf` | Livreur à Ouagadougou |
+| `livreur2@fasogaz.bf` | Livreur à Bobo-Dioulasso |
+| `admin@kadiogogaz.bf` | Distributeur Kadiogo Gaz (Ouagadougou) |
+| `admin@gazduhouet.bf` | Distributeur Gaz du Houet (Bobo-Dioulasso) |
+| `admin@koudougougaz.bf` | Distributeur Koudougou Gaz Services (Koudougou) |
 | `super@gazflow.app` | Opérateur plateforme |
 
 ### Variables d'environnement
@@ -119,7 +129,7 @@ test/         tests d'intégration de l'API (node:test)
 **Stock :** il est décrémenté dans une transaction, avec une condition `stock >= quantité`. Deux clients ne peuvent donc pas acheter la même dernière bouteille.
 
 ## Pistes pour la suite
-- Paiement Mobile Money réel (Orange Money, MTN MoMo, Wave) via un agrégateur comme CinetPay ou PayDunya
+- Paiement réel Orange Money et Moov Money (Burkina), par exemple via un agrégateur comme CinetPay, PayDunya ou Ligdicash
 - Notifications SMS/WhatsApp à chaque changement de statut
 - Géolocalisation du livreur en temps réel
 - Stock par point de vente : aujourd'hui, la disponibilité affichée est celle du distributeur dans la ville

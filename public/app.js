@@ -87,7 +87,9 @@ function enterPage() {
 }
 
 const KIND = { recharge: 'Recharge', bouteille: 'Bouteille neuve', accessoire: 'Accessoire' };
-const PAY = { especes: 'Espèces à la livraison', mobile_money: 'Mobile Money', carte: 'Carte bancaire' };
+const PAY = { especes: 'Espèces à la livraison', mobile_money: 'Mobile Money (Orange Money, Moov Money)', carte: 'Carte bancaire' };
+const BF_CENTER = [12.25, -1.6]; // Burkina Faso
+const SHORT_CITY = { Ouagadougou: 'Ouaga', 'Bobo-Dioulasso': 'Bobo', "Fada N'Gourma": 'Fada' };
 const PAY_STATUS = { en_attente: 'Non payé', paye: 'Payé', rembourse: 'Remboursé' };
 const SLOT = { asap: 'Dès que possible', matin: 'Matin (8h–12h)', apres_midi: 'Après-midi (12h–17h)', soir: 'Soir (17h–21h)' };
 const FLOW = ['en_attente', 'confirmee', 'assignee', 'en_livraison', 'livree'];
@@ -143,8 +145,11 @@ async function api(method, url, body) {
 const formData = (form) => Object.fromEntries(new FormData(form).entries());
 const badge = (status, label) => `<span class="badge s-${esc(status)}">${esc(label)}</span>`;
 const payBadge = (s) => `<span class="badge p-${esc(s)}">${esc(PAY_STATUS[s] || s)}</span>`;
-const cityOptions = (selected, filter = () => true) => state.cities.filter(filter)
-  .map((c) => `<option value="${c.id}" ${String(c.id) === String(selected) ? 'selected' : ''}>${esc(c.name)} — ${esc(c.country)}</option>`).join('');
+const cityOptions = (selected, filter = () => true) => {
+  const multi = new Set(state.cities.map((c) => c.country)).size > 1;
+  return state.cities.filter(filter)
+    .map((c) => `<option value="${c.id}" ${String(c.id) === String(selected) ? 'selected' : ''}>${esc(c.name)}${multi ? ` — ${esc(c.country)}` : ''}</option>`).join('');
+};
 
 function setSession(data) {
   state.token = data.token;
@@ -229,7 +234,7 @@ function landingSections(stats, plans, brands) {
       <h2 class="section-title">De la bouteille vide à la bouteille pleine, en 3 étapes</h2>
       <p>Plus besoin de faire le tour des dépôts ni d'appeler partout : GazFlow sait qui a votre gaz, et à quelle distance.</p></div>
     <div class="steps3">${[
-      [Art.stepSearch(), 'Tapez votre marque', 'Oryx, Total, Tradex… même mal écrite. Les points de vente qui l’ont s’affichent du plus proche au plus loin.'],
+      [Art.stepSearch(), 'Tapez votre marque', 'Oryx, Sodigaz, Total, Shell… même mal écrite, avec ou sans la ville (« Oryx Bobo »). Les points de vente s’affichent du plus proche au plus loin.'],
       [Art.stepRequest(), 'Publiez une demande', 'Recharge, collecte ou bouteille neuve : tous les distributeurs de votre ville la reçoivent. Le premier la prend.'],
       [Art.stepDelivery(), 'Le livreur arrive', 'Vous voyez qui s’en occupe, vous pouvez l’appeler et suivre la livraison jusqu’à votre porte.'],
     ].map(([art, t, d], i) => `<div class="card step lift reveal d${i}"><span class="num">${i + 1}</span>${art}<h3>${t}</h3><p class="muted">${d}</p></div>`).join('')}
@@ -239,7 +244,7 @@ function landingSections(stats, plans, brands) {
   <section class="wrap section"><div class="story">
     <div class="story-media reveal"><img src="/img/livreur-gaz.jpg" alt="Un livreur à moto transporte une bouteille de gaz" loading="lazy" data-parallax>
       <div class="float-card a"><span class="ic">🛵</span><div>Livreur à 600 m<small>Arrivée dans 6 min</small></div></div>
-      <div class="float-card b"><span class="ic">✅</span><div>Demande acceptée<small>par GazExpress</small></div></div>
+      <div class="float-card b"><span class="ic">✅</span><div>Demande acceptée<small>par un dépôt de Ouaga</small></div></div>
     </div>
     <div class="reveal d1"><span class="kicker">Fini le tour des dépôts</span>
       <h2 class="section-title">Votre bouteille est vide ? On sait qui l'a, tout près de chez vous.</h2>
@@ -255,7 +260,7 @@ function landingSections(stats, plans, brands) {
 
   <section class="wrap section tight"><div class="mosaic">
     <figure class="reveal"><img src="/img/cuisine.jpg" alt="Une cuisinière souriante prépare le repas" loading="lazy"><figcaption>Le gaz de tous les jours<small>Pour la maison, le maquis ou le restaurant</small></figcaption></figure>
-    <figure class="reveal d1"><img src="/img/bouteilles.jpg" alt="Des bouteilles de gaz orange alignées" loading="lazy"><figcaption>Toutes les marques<small>${esc(brands.join(' · ') || 'Oryx · Total · Tradex')}</small></figcaption></figure>
+    <figure class="reveal d1"><img src="/img/bouteilles.jpg" alt="Des bouteilles de gaz orange alignées" loading="lazy"><figcaption>Toutes les marques<small>${esc(brands.join(' · ') || 'Sodigaz · Oryx · Total · Shell')}</small></figcaption></figure>
     <figure class="reveal d2"><img src="/img/scooter-ville.jpg" alt="Un livreur à moto traverse la ville" loading="lazy"><figcaption>Livré en ville<small>Par les livreurs du dépôt le plus proche</small></figcaption></figure>
   </div></section>
 
@@ -291,24 +296,29 @@ async function pageSearch(params) {
     api('GET', '/api/brands'), api('GET', '/api/stats/public'), guest ? api('GET', '/api/plans') : [],
   ]);
   if (pageId !== routeSeq) return; // page quittée entre-temps
-  const rot = brands.length ? brands : ['Oryx', 'Total', 'Tradex'];
+  const PRIORITY = ['Ouagadougou', 'Bobo-Dioulasso', 'Banfora'];
+  const rank = (c) => (PRIORITY.includes(c.name) ? PRIORITY.indexOf(c.name) : 99);
+  const served = state.cities.filter((c) => c.providers > 0).sort((a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name));
+  const rot = brands.length ? brands : ['Sodigaz', 'Oryx', 'Total', 'Shell'];
   const first = state.me ? esc(state.me.user.name.split(' ')[0]) : '';
   view.className = 'landing';
   view.innerHTML = `
     <section class="hero ${guest ? '' : 'compact'}">
       <div class="wrap hero-grid">
         <div>
-          <span class="eyebrow"><b>Live</b> ${stats.points} points de vente · ${stats.cities} villes</span>
+          <span class="eyebrow"><b>🇧🇫 Burkina Faso</b> ${stats.points} points de vente · ${stats.cities} villes</span>
           <h1>${guest
             ? `Votre gaz <span class="rotator" aria-live="off">${rot.map((b, i) => `<span class="${i ? '' : 'on'}">${esc(b)}</span>`).join('')}</span><br>trouvé et livré.`
             : `Bonjour ${first},<br><span class="grad">quel gaz cherchez-vous ?</span>`}</h1>
-          <p class="lead">Tapez votre marque : les points de vente qui l'ont s'affichent, du plus proche au plus loin. Commandez ou demandez une recharge en un clic.</p>
+          <p class="lead">Tapez votre marque : les points de vente qui l'ont s'affichent, du plus proche au plus loin.
+            ${served.length ? `Disponible à ${served.map((c) => esc(c.name)).join(', ').replace(/, ([^,]*)$/, ' et $1')}.` : ''}</p>
           <form class="searchbox" id="sf" role="search">
-            <div class="q"><input id="q" type="search" value="${esc(query)}" placeholder="Oryx, Total 12,5 kg, Tradex…" autocomplete="off" aria-label="Marque ou produit"></div>
+            <div class="q"><input id="q" type="search" value="${esc(query)}" placeholder="Sodigaz, Oryx Bobo, Total 6 kg…" autocomplete="off" aria-label="Marque ou produit"></div>
             <select id="sc" aria-label="Ville"><option value="">Toutes les villes</option>${cityOptions(cityId, (c) => c.providers > 0)}</select>
             <button type="button" class="btn primary" id="geo">📍 Autour de moi</button>
           </form>
           <div class="chips">${brands.map((b) => `<button type="button" class="chip" data-brand="${esc(b)}">${esc(b)}</button>`).join('')}</div>
+          <div class="chips city-chips" aria-label="Villes">${served.map((c) => `<button type="button" class="chip" data-city="${c.id}">📍 ${esc(SHORT_CITY[c.name] || c.name)}</button>`).join('')}</div>
           <div class="geo-note" id="geonote"></div>
         </div>
         <div class="hero-art">${Art.hero()}</div>
@@ -366,7 +376,7 @@ async function pageSearch(params) {
       list.innerHTML = `<div class="card">${emptyBox(`<b>Aucun point de vente${query ? ` n'a « ${esc(query)} »` : ''}${where}.</b><br>
         Essayez une autre marque, ou <a href="${$('#cta').getAttribute('href')}">faites une demande</a> : les distributeurs vous répondront.`)}</div>`;
     } else {
-      const nearest = results.find((p) => p.available && p.distance_km != null);
+      const nearest = results.find((p) => p.available && p.distance_km != null && p.distance_km <= 30);
       const LIMIT = 4;
       const visible = showAll || query || results.length <= LIMIT + 1 ? results : results.slice(0, LIMIT);
       list.innerHTML = `<div class="results-head"><b>${results.length} point(s) de vente${query ? ` avec « ${esc(query)} »` : ''}${where}</b>
@@ -405,7 +415,7 @@ async function pageSearch(params) {
   };
   const drawMap = (results) => {
     if (!searchMap) {
-      searchMap = L.map('map', { scrollWheelZoom: false }).setView([7.5, -2], 4);
+      searchMap = L.map('map', { scrollWheelZoom: false }).setView(BF_CENTER, 6);
       L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
         maxZoom: 19, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
       }).addTo(searchMap);
@@ -433,8 +443,10 @@ async function pageSearch(params) {
     // Cadrage : autour de moi + les points disponibles les plus proches, sinon tous les résultats.
     const near = state.pos ? results.filter((p) => p.available && p.distance_km != null && p.distance_km < 30).slice(0, 5) : [];
     const frame = near.length ? [...near.map((p) => [p.lat, p.lng]), [state.pos.lat, state.pos.lng]] : bounds;
-    if (frame.length) searchMap.fitBounds(frame, { padding: [30, 30], maxZoom: 15 });
-    setTimeout(() => searchMap && searchMap.invalidateSize(), 50);
+    const fit = () => { if (searchMap && frame.length) searchMap.fitBounds(frame, { padding: [30, 30], maxZoom: 15 }); };
+    fit();
+    // La page s'anime à l'arrivée : on recadre quand la carte a sa taille définitive.
+    setTimeout(() => { if (searchMap) { searchMap.invalidateSize(); fit(); } }, 700);
   };
 
   const run = async () => {
@@ -453,7 +465,8 @@ async function pageSearch(params) {
     // Marque reconnue (« ori » → « Oryx ») pour pré-remplir la demande.
     const brand = query ? (results.flatMap((p) => p.products).find((o) => o.in_stock && o.brand)?.brand || query) : '';
     $('#cta').setAttribute('href', `#/demande?${new URLSearchParams({ ...(firstCity && { ville: firstCity }), ...(brand && { marque: brand }) })}`);
-    $$('.chip').forEach((c) => c.classList.toggle('on', c.dataset.brand.toLowerCase() === query.trim().toLowerCase()));
+    $$('.chip[data-brand]').forEach((c) => c.classList.toggle('on', c.dataset.brand.toLowerCase() === query.trim().toLowerCase()));
+    $$('.chip[data-city]').forEach((c) => c.classList.toggle('on', c.dataset.city === String(cityId)));
     note();
     draw(results);
   };
@@ -462,7 +475,12 @@ async function pageSearch(params) {
   $('#q').addEventListener('input', (e) => { clearTimeout(timer); timer = setTimeout(() => { query = e.target.value.trim(); run(); }, 250); });
   $('#sf').addEventListener('submit', async (e) => { e.preventDefault(); query = $('#q').value.trim(); await run(); showResults(); });
   $('#sc').addEventListener('change', (e) => { cityId = e.target.value; run(); });
-  $$('.chip').forEach((c) => c.addEventListener('click', () => {
+  $$('[data-city]').forEach((c) => c.addEventListener('click', () => {
+    cityId = String(cityId) === c.dataset.city ? '' : c.dataset.city;
+    $('#sc').value = cityId;
+    run().then(showResults);
+  }));
+  $$('.chip[data-brand]').forEach((c) => c.addEventListener('click', () => {
     query = c.classList.contains('on') ? '' : c.dataset.brand;
     $('#q').value = query;
     run().then(showResults);
@@ -481,7 +499,7 @@ async function pageSearch(params) {
 }
 
 const DEMO = `<div class="demo">Comptes de démonstration (mot de passe <b>demo1234</b>) :<br>
-  ${['client@demo.app', 'admin@gazexpress.ci', 'livreur@gazexpress.ci', 'super@gazflow.app'].map((e) => `<code data-demo="${e}">${e}</code>`).join(' · ')}</div>`;
+  ${['client@demo.app', 'admin@fasogaz.bf', 'livreur@fasogaz.bf', 'super@gazflow.app'].map((e) => `<code data-demo="${e}">${e}</code>`).join(' · ')}</div>`;
 
 function pageLogin(params) {
   const tab = params.get('tab') || 'login';
@@ -503,7 +521,7 @@ function pageLogin(params) {
         <p></p>${DEMO}` : `
         <form id="f">
           <div class="field"><label>Nom complet</label><input name="name" required></div>
-          <div class="field"><label>Téléphone</label><input name="phone" type="tel" required placeholder="+225 07 00 00 00 00"></div>
+          <div class="field"><label>Téléphone</label><input name="phone" type="tel" required placeholder="+226 70 00 00 00"></div>
           <div class="field"><label>Ville</label><select name="city_id">${cityOptions(null)}</select></div>
           <div class="field"><label>Email</label><input name="email" type="email" required></div>
           <div class="field"><label>Mot de passe (8 caractères min.)</label><input name="password" type="password" minlength="8" required></div>
@@ -1051,7 +1069,7 @@ async function pageRequest(params) {
         <div class="choices">${Object.entries(SERVICE).map(([k, [ic, l, d]]) => `<label class="choice"><input type="radio" name="service" value="${k}" ${service === k ? 'checked' : ''}>
           <b>${ic} ${l}</b><span class="small muted">${d}</span></label>`).join('')}</div>
         <div class="row">
-          <div class="field"><label for="rb">Marque</label><input id="rb" name="brand" list="brandlist" value="${esc(params.get('marque') || draft.brand || '')}" placeholder="Oryx, Total…">
+          <div class="field"><label for="rb">Marque</label><input id="rb" name="brand" list="brandlist" value="${esc(params.get('marque') || draft.brand || '')}" placeholder="Sodigaz, Oryx, Total…">
             <datalist id="brandlist">${brands.map((b) => `<option value="${esc(b)}">`).join('')}</datalist></div>
           <div class="field"><label for="rw">Taille</label><select id="rw" name="weight_kg"><option value="">Je ne sais pas</option>
             ${[3, 6, 12.5, 35].map((w) => `<option value="${w}" ${String(draft.weight_kg) === String(w) ? 'selected' : ''}>${String(w).replace('.', ',')} kg</option>`).join('')}</select></div>
@@ -1064,7 +1082,7 @@ async function pageRequest(params) {
           <div class="field"><label for="rp">Téléphone</label><input id="rp" name="phone" type="tel" value="${esc(draft.phone || state.me?.user.phone || '')}" required></div>
           <div class="field"><label for="rm">Paiement</label><select id="rm" name="payment_method">${Object.entries(PAY).map(([k, v]) => `<option value="${k}" ${draft.payment_method === k ? 'selected' : ''}>${v}</option>`).join('')}</select></div>
         </div>
-        <div class="field"><label for="rn">Précisions (facultatif)</label><input id="rn" name="notes" value="${esc(draft.notes || '')}" placeholder="Ex. : 3e étage, sonner chez Mme Koné"></div>
+        <div class="field"><label for="rn">Précisions (facultatif)</label><input id="rn" name="notes" value="${esc(draft.notes || '')}" placeholder="Ex. : portail bleu, demander Mme Ouédraogo"></div>
         <button class="btn primary" style="width:100%">Envoyer ma demande</button>
         ${role ? '' : '<p class="small muted">Il faudra vous connecter ou créer un compte (30 secondes) : votre demande sera conservée.</p>'}
       </form>
@@ -1171,7 +1189,7 @@ async function pageAdminPoints() {
       ${zones.length ? '' : '<p>Ajoutez d\'abord une ville dans <a href="#/admin/zones">Villes</a>.</p>'}
       <div class="row">
         <div class="field"><label for="pc">Ville</label><select id="pc" name="city_id" required>${zones.map((z) => `<option value="${z.city_id}">${esc(z.name)}</option>`).join('')}</select></div>
-        <div class="field"><label for="pn">Nom</label><input id="pn" name="name" required placeholder="Dépôt Cocody"></div>
+        <div class="field"><label for="pn">Nom</label><input id="pn" name="name" required placeholder="Dépôt Ouaga 2000"></div>
         <div class="field"><label for="pp">Téléphone</label><input id="pp" name="phone" type="tel"></div>
         <div class="field"><label for="ph">Horaires</label><input id="ph" name="hours" placeholder="7h – 21h"></div>
       </div>
@@ -1196,7 +1214,7 @@ async function pageAdminPoints() {
     if (pan) map.setView([lat, lng], Math.max(map.getZoom(), 15));
   };
   if (typeof window.L !== 'undefined') {
-    map = L.map('pickmap').setView([7.5, -2], 4);
+    map = L.map('pickmap').setView(BF_CENTER, 6);
     L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; OpenStreetMap' }).addTo(map);
     for (const p of points) L.circleMarker([p.lat, p.lng], { radius: 6, color: '#e8590c' }).addTo(map).bindTooltip(p.name);
     const centerOnCity = () => {
