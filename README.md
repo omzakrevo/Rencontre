@@ -73,7 +73,7 @@ Un visiteur peut remplir une demande sans compte. Elle est conservée pendant qu
 
 ## Démarrage
 
-Il faut **Node.js 22.13 ou plus récent**. La base SQLite est intégrée à Node, donc rien d'autre à installer.
+Il faut **Node.js 22.12 ou plus récent**. En local, une base **Postgres embarquée** démarre toute seule : rien d'autre à installer. Ses données sont dans `.data/db`.
 
 ```bash
 npm install
@@ -81,7 +81,7 @@ npm start          # http://localhost:3000
 npm test           # tests de l'API
 ```
 
-Au premier lancement, la base `gazflow.db` est créée avec des **données de démonstration du Burkina Faso** :
+Au premier lancement, les migrations de `netlify/database/migrations/` créent les tables et les **données de démonstration du Burkina Faso** :
 - 12 villes : Ouagadougou, Bobo-Dioulasso, Banfora, Koudougou, Ouahigouya, Kaya, Tenkodogo, Fada N'Gourma, Dédougou, Gaoua, Dori, Ziniaré.
 - 4 distributeurs **fictifs** desservant Ouagadougou, Bobo-Dioulasso, Banfora et Koudougou.
 - 11 points de vente dans de vrais quartiers : Ouaga 2000, Zogona, Gounghin, Tampouy, Pissy, Accart-Ville, Sarfalao, Dogona, Banfora centre, Koudougou.
@@ -90,7 +90,7 @@ Au premier lancement, la base `gazflow.db` est créée avec des **données de d�
 
 Les noms des distributeurs, les prix et les positions GPS des dépôts sont des exemples : remplacez-les par les vrais avant le lancement. Les autres villes n'ont pas encore de distributeur. Un distributeur qui s'inscrit les ajoute dans « Villes ».
 
-Si vous aviez déjà lancé une ancienne version, supprimez le fichier `gazflow.db` pour recréer les données de démonstration du Burkina.
+Pour repartir de zéro en local, supprimez le dossier `.data/db`.
 
 La carte utilise Leaflet et les fonds OpenStreetMap, chargés depuis Internet. Sans connexion, la recherche fonctionne sans carte.
 
@@ -111,8 +111,15 @@ Mot de passe de tous les comptes de démonstration : **`demo1234`**
 | Variable | Rôle | Par défaut |
 |---|---|---|
 | `PORT` | Port HTTP | `3000` |
-| `DB_FILE` | Fichier SQLite | `gazflow.db` |
-| `AUTH_SECRET` | Secret de signature des sessions. **À définir en production.** | secret de développement |
+| `DATABASE_URL` | Postgres de production (VPS, Coolify). Les migrations sont appliquées au démarrage. | base embarquée locale |
+| `AUTH_SECRET` | Secret de signature des sessions. **Obligatoire en production.** | secret de développement |
+| `MIGRATIONS` | `off` pour ne pas appliquer les migrations au démarrage | appliquées |
+
+## Mise en ligne
+
+**Sur un VPS avec Coolify** : voir **[DEPLOIEMENT.md](DEPLOIEMENT.md)**. Le dépôt contient un `Dockerfile` et un `docker-compose.yml` (application + Postgres 17), testés : démarrage, migrations, parcours complet, redéploiement sans perte de données.
+
+Une configuration Netlify (`netlify.toml`, `netlify/server/`) est aussi présente, au cas où.
 
 ## Architecture
 
@@ -121,12 +128,14 @@ src/
   server.js   démarrage
   app.js      API REST Express (auth, recherche, demandes, catalogue, commandes, espaces distributeur et plateforme)
   search.js   recherche tolérante aux fautes et calcul de distance GPS
-  db.js       schéma SQLite, offres d'abonnement, données de démonstration
+  db.js       accès Postgres, transactions, migrations, offres d'abonnement
   auth.js     mots de passe (scrypt) et jetons signés (HMAC)
 public/       interface web (HTML/CSS/JS sans framework, responsive, mode sombre)
   art.js      illustrations SVG animées
   img/        photos
-test/         tests d'intégration de l'API (node:test)
+test/         tests d'intégration de l'API (node:test, Postgres embarqué)
+netlify/database/migrations/  schéma et données de démo (SQL)
+Dockerfile, docker-compose.yml  déploiement sur VPS (Coolify)
 ```
 
 **Isolation des données :** chaque requête est filtrée par le `tenant_id` de l'utilisateur. Un distributeur ne voit jamais les commandes d'un autre, et un livreur ne voit que les courses qui lui sont assignées.
@@ -139,4 +148,3 @@ test/         tests d'intégration de l'API (node:test)
 - Géolocalisation du livreur en temps réel
 - Stock par point de vente : aujourd'hui, la disponibilité affichée est celle du distributeur dans la ville
 - Facturation automatique des abonnements
-- Passage à PostgreSQL pour une forte volumétrie

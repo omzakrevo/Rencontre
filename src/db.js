@@ -69,11 +69,15 @@ function wrapPool(pool, onClose) {
   };
 }
 
-/** Applique les migrations non encore appliquées (base embarquée uniquement). */
+/**
+ * Applique les migrations non encore appliquées (base embarquée, ou serveur Postgres sur un VPS).
+ * Un verrou Postgres évite que deux instances qui démarrent ensemble les appliquent en double.
+ */
 async function applyMigrations(connectionString) {
   const client = new pg.Client({ connectionString });
   await client.connect();
   try {
+    await client.query('SELECT pg_advisory_lock(727274)');
     await client.query('CREATE TABLE IF NOT EXISTS _gazflow_migrations (name TEXT PRIMARY KEY, applied_at TIMESTAMPTZ DEFAULT now())');
     const done = new Set((await client.query('SELECT name FROM _gazflow_migrations')).rows.map((r) => r.name));
     const files = fs.readdirSync(MIGRATIONS_DIR).filter((f) => f.endsWith('.sql')).sort();
@@ -90,16 +94,22 @@ async function applyMigrations(connectionString) {
       }
     }
   } finally {
+    await client.query('SELECT pg_advisory_unlock(727274)').catch(() => {});
     await client.end();
   }
 }
 
-/** Chaîne de connexion fournie par l'environnement (Netlify, ou DATABASE_URL), sinon null. */
-function hostedConnectionString() {
-  if (process.env.DATABASE_URL) return process.env.DATABASE_URL;
-  if (process.env.NETLIFY_DB_URL) return process.env.NETLIFY_DB_URL;
+/**
+ * Base hébergée fournie par l'environnement, sinon null.
+ * - DATABASE_URL (VPS / Coolify / Docker) : l'application applique elle-même les migrations ;
+ * - Netlify DB : Netlify les applique au déploiement.
+ */
+function hostedDatabase() {
+  if (process.env.DATABASE_URL) return { url: process.env.DATABASE_URL, migrate: process.env.MIGRATIONS !== 'off' };
+  if (process.env.NETLIFY_DB_URL) return { url: process.env.NETLIFY_DB_URL, migrate: false };
   try {
-    return require('@netlify/database').getConnectionString() || null;
+    const url = require('@netlify/database').getConnectionString();
+    return url ? { url, migrate: false } : null;
   } catch {
     return null;
   }
@@ -111,13 +121,19 @@ function hostedConnectionString() {
  *   dir    : dossier de la base embarquée persistante (développement local)
  */
 async function openDb({ memory = false, dir = process.env.DB_DIR || '.data/db' } = {}) {
-  const hosted = memory ? null : hostedConnectionString();
+  const hosted = memory ? null : hostedDatabase();
   if (hosted) {
-    return wrapPool(new pg.Pool({ connectionString: hosted, max: 5, idleTimeoutMillis: 30_000 }));
+    if (hosted.migrate) await applyMigrations(hosted.url);
+    return wrapPool(new pg.Pool({ connectionString: hosted.url, max: Number(process.env.DB_POOL_MAX) || 10, idleTimeoutMillis: 30_000 }));
   }
-  // Import dynamique non littéral : le paquet de développement n'est pas embarqué dans le serveur Netlify.
+  // Import dynamique non littéral : le paquet de développement n'est pas embarqué en production.
   const devPkg = '@netlify/database-dev';
-  const { NetlifyDB } = await import(devPkg);
+  let NetlifyDB;
+  try {
+    ({ NetlifyDB } = await import(devPkg));
+  } catch {
+    throw new Error('Aucune base configurée : définissez DATABASE_URL (Postgres), ou installez les dépendances de développement pour la base embarquée.');
+  }
   const embedded = new NetlifyDB(memory ? {} : { directory: path.resolve(dir) });
   const connectionString = await embedded.start();
   await applyMigrations(connectionString);

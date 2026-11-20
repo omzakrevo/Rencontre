@@ -88,6 +88,7 @@ const offerText = (o) => `${o.brand || ''} ${o.name} ${o.weight_kg ? `${o.weight
 function createApp(db) {
   const app = express();
   app.disable('x-powered-by');
+  app.set('trust proxy', 1); // derrière le proxy de Coolify (Traefik) ou de Netlify
   app.use(express.json({ limit: '100kb' }));
   app.use(express.static(path.join(__dirname, '..', 'public')));
 
@@ -168,6 +169,12 @@ function createApp(db) {
         t.id, 'admin', adminName, e, phone, hashPassword(password))).id;
     });
     return login(await get('SELECT * FROM users WHERE id = ?', userId));
+  }));
+
+  // Santé de l'application (utilisée par Docker / Coolify).
+  app.get('/api/health', wrap(async () => {
+    await get('SELECT 1 AS ok');
+    return { ok: true };
   }));
 
   // ---------- Catalogue public ----------
