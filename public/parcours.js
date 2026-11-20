@@ -21,7 +21,9 @@
     { id: 'collecte', icon: 'refresh', title: 'Recharger ma bouteille', text: 'Un livreur récupère ma bouteille, la recharge et me la ramène.' },
     { id: 'achat', icon: 'plus', title: 'Acheter une bouteille neuve', text: 'Je n’ai pas de bouteille : j’en achète une, livrée chez moi.' },
   ];
-  const BRAND_COLORS = { Sodigaz: '#0f9d58', Oryx: '#f59e0b', Total: '#e11d48', TotalEnergies: '#e11d48', Shell: '#eab308' };
+  // Couleurs réelles des bouteilles au Burkina : Oryx rouge, Total orange, Sodigaz et Shell bleues.
+  const BRAND_COLORS = { Sodigaz: '#1f5fc4', Oryx: '#d9261c', Total: '#f26a14', TotalEnergies: '#f26a14', Shell: '#1d63b8' };
+  const brandColor = (b) => (b ? BRAND_COLORS[b] || '#64748b' : '#94a3b8');
 
   const ICONS = {
     pin: '<path d="M12 22s7-6.2 7-12a7 7 0 1 0-14 0c0 5.8 7 12 7 12z"/><circle cx="12" cy="10" r="2.6"/>',
@@ -38,17 +40,47 @@
   };
   const ic = (name, size = 22) => `<svg class="fx-ic" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[name]}</svg>`;
 
-  /** Bouteille de gaz stylisée ; la hauteur suit le poids. */
-  const bottleSvg = (kg, color = '#f25c05') => {
-    const h = Math.max(60, Math.min(118, 46 + Number(kg) * 4.2));
-    const top = 124 - h;
+  let bottleSeq = 0;
+  /**
+   * Bouteille de gaz dessinée comme les vraies : collerette avec poignées, robinet, corps arrondi,
+   * cerclage, socle ajouré et nom de la marque. Les petites bouteilles sont trapues, les grandes élancées.
+   */
+  const bottleSvg = (kg, color = '#f25c05', label = '') => {
+    const w = Number(kg) || 12.5;
+    const id = `fxb${++bottleSeq}`;
+    const bodyH = Math.max(46, Math.min(96, 30 + w * 3.4)); // hauteur du corps
+    const bodyW = w <= 6 ? 58 : w <= 15 ? 52 : 46; // les grandes bouteilles sont plus fines
+    const x = (80 - bodyW) / 2;
+    const footY = 124;
+    const bodyTop = footY - 8 - bodyH;
+    const collarTop = bodyTop - 18;
+    const r = Math.min(bodyW / 2.4, 22);
+    const txt = label ? label.toUpperCase().slice(0, 8) : '';
     return `<svg class="fx-bottle" viewBox="0 0 80 132" aria-hidden="true">
-      <ellipse cx="40" cy="126" rx="26" ry="4" fill="currentColor" opacity=".12"/>
-      <rect x="30" y="${top - 12}" width="20" height="10" rx="3" fill="#475569"/>
-      <rect x="22" y="${top - 6}" width="36" height="8" rx="3" fill="${color}" opacity=".8"/>
-      <rect x="12" y="${top}" width="56" height="${h}" rx="22" fill="${color}"/>
-      <rect x="12" y="${top + h * 0.42}" width="56" height="${Math.max(12, h * 0.2)}" fill="#fff" opacity=".9"/>
-      <rect x="18" y="${top + 8}" width="7" height="${h * 0.3}" rx="3.5" fill="#fff" opacity=".35"/>
+      <defs>
+        <linearGradient id="${id}" x1="0" x2="1">
+          <stop offset="0" stop-color="${color}"/><stop offset=".28" stop-color="${color}"/>
+          <stop offset=".42" stop-color="#fff" stop-opacity=".35"/><stop offset=".55" stop-color="${color}"/>
+          <stop offset="1" stop-color="#000" stop-opacity=".25"/>
+        </linearGradient>
+      </defs>
+      <ellipse cx="40" cy="128" rx="${bodyW / 2 + 4}" ry="3.5" fill="currentColor" opacity=".14"/>
+      <!-- collerette de protection avec ses deux ouvertures (poignées) -->
+      <path d="M${x + 10} ${bodyTop + 4} V${collarTop + 3} a3 3 0 0 1 3 -3 H${80 - x - 13} a3 3 0 0 1 3 3 V${bodyTop + 4}" fill="none" stroke="${color}" stroke-width="5" stroke-linejoin="round"/>
+      <rect x="${x + 16}" y="${collarTop + 5}" width="${bodyW - 32}" height="7" rx="2" fill="${color}" opacity=".55"/>
+      <!-- robinet -->
+      <rect x="36.5" y="${collarTop + 6}" width="7" height="${bodyTop - collarTop - 4}" rx="1.5" fill="#8a6a2b"/>
+      <rect x="33" y="${collarTop + 4}" width="14" height="4" rx="2" fill="#6b5320"/>
+      <!-- corps -->
+      <rect x="${x}" y="${bodyTop}" width="${bodyW}" height="${bodyH}" rx="${r}" fill="url(#${id})"/>
+      <path d="M${x + 2} ${bodyTop + bodyH * 0.5} H${80 - x - 2}" stroke="#000" stroke-opacity=".18" stroke-width="1.2"/>
+      ${txt ? `<text x="40" y="${bodyTop + bodyH * 0.42}" text-anchor="middle" font-family="Plus Jakarta Sans, system-ui, sans-serif"
+        font-weight="800" font-size="${Math.min(9, (bodyW - 8) / (txt.length * 0.62))}" fill="#fff" letter-spacing=".3">${esc(txt)}</text>` : ''}
+      <!-- socle ajouré -->
+      <path d="M${x + 4} ${footY - 9} H${80 - x - 4} L${80 - x - 2} ${footY} H${x + 2} Z" fill="${color}"/>
+      <rect x="${x + 9}" y="${footY - 6}" width="7" height="3" rx="1.5" fill="#000" opacity=".25"/>
+      <rect x="${80 - x - 16}" y="${footY - 6}" width="7" height="3" rx="1.5" fill="#000" opacity=".25"/>
+      <path d="M${x + 4} ${footY - 9} H${80 - x - 4}" stroke="#000" stroke-opacity=".2" stroke-width="1.5"/>
     </svg>`;
   };
 
@@ -254,10 +286,11 @@
         ${head('Étape 2 sur 4', 'Quelle marque de gaz ?', `Disponibles à ${esc(city()?.name || '')}.`)}
         <div class="fx-grid fx-stagger">
           ${list.map((b) => `
-            <button class="fx-choice fx-brand ${flow.brand === b ? 'is-picked' : ''}" type="button" data-brand="${esc(b ?? '')}">
-              <span class="fx-brand-dot" style="--c:${b ? (BRAND_COLORS[b] || '#64748b') : '#94a3b8'}">${b ? esc(b[0]) : '★'}</span>
+            <button class="fx-choice fx-brand ${flow.brand === b ? 'is-picked' : ''}" type="button" data-brand="${esc(b ?? '')}" style="--c:${brandColor(b)}">
+              <span class="fx-brand-art">${b ? bottleSvg(12.5, brandColor(b), b)
+    : `<span class="fx-brand-mix">${bottleSvg(6, BRAND_COLORS.Oryx)}${bottleSvg(12.5, BRAND_COLORS.Sodigaz)}${bottleSvg(6, BRAND_COLORS.Total)}</span>`}</span>
               <span class="fx-choice-main">${b ? esc(b) : 'Peu importe'}</span>
-              <span class="fx-choice-sub">${b ? '' : 'Le moins cher'}</span>
+              <span class="fx-choice-sub">${b ? 'Bouteille de la marque' : 'Le moins cher'}</span>
             </button>`).join('')}
         </div>
       </section>`;
@@ -277,7 +310,8 @@
         }
       }
       const list = [...weights.entries()].sort((a, b) => a[0] - b[0]);
-      const color = flow.brand ? (BRAND_COLORS[flow.brand] || '#f25c05') : '#f25c05';
+      const color = flow.brand ? brandColor(flow.brand) : '#f25c05';
+      const label = flow.brand || '';
       return `
       <section class="fx-step">
         ${head('Étape 3 sur 4', 'Quelle bouteille ?', 'Choisissez la taille de votre bouteille.')}
@@ -285,7 +319,7 @@
         ${list.length ? `<div class="fx-sizes fx-stagger">
           ${list.map(([w, price]) => `
             <button class="fx-choice fx-size ${Number(flow.weight) === w ? 'is-picked' : ''}" type="button" data-weight="${w}">
-              ${bottleSvg(w, color)}
+              ${bottleSvg(w, color, label)}
               <span class="fx-choice-main">${String(w).replace('.', ',')} kg</span>
               <span class="fx-choice-sub">${price ? `recharge dès ${money(price)}` : 'bouteille neuve'}</span>
             </button>`).join('')}

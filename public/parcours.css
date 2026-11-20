@@ -65,9 +65,16 @@ body.flow-mode { padding-bottom: 0 !important; background: var(--bg); overscroll
 .fx-choice-main { font-weight: 800; font-size: 1.05rem; line-height: 1.25; }
 .fx-choice-sub { color: var(--muted); font-size: 13px; line-height: 1.4; }
 
-.fx-brand { align-items: flex-start; padding-top: 14px; }
-.fx-brand-dot { width: 40px; height: 40px; border-radius: 14px; display: grid; place-items: center; font-weight: 800; color: #fff;
-  background: var(--c); box-shadow: 0 6px 16px color-mix(in srgb, var(--c) 45%, transparent); margin-bottom: 6px; }
+.fx-brand { align-items: center; text-align: center; padding: 14px 10px 16px; }
+.fx-brand-art { height: 92px; display: grid; place-items: end center; margin-bottom: 4px; }
+.fx-brand-art > .fx-bottle { width: 60px; height: 96px; filter: drop-shadow(0 8px 14px color-mix(in srgb, var(--c) 40%, transparent)); }
+.fx-brand-mix { display: flex; align-items: flex-end; }
+.fx-brand-mix .fx-bottle { width: 36px; height: 58px; margin: 0 -5px; }
+.fx-brand-mix .fx-bottle:nth-child(2) { width: 44px; height: 72px; position: relative; z-index: 1; }
+.fx-brand:hover .fx-bottle, .fx-brand.is-picked .fx-bottle { transform: translateY(-4px) rotate(-4deg); }
+.fx-brand.is-picked { border-color: var(--c); background: color-mix(in srgb, var(--c) 10%, var(--surface));
+  box-shadow: 0 10px 30px color-mix(in srgb, var(--c) 28%, transparent); }
+.fx-brand.is-picked::after { background-color: var(--c); }
 
 .fx-size { align-items: center; text-align: center; padding: 14px 10px; }
 .fx-bottle { width: 64px; height: 104px; color: var(--text); transition: transform .4s var(--spring); }

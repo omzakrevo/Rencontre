@@ -1,6 +1,6 @@
 'use strict';
 /* FasoGaz — service worker : installation (PWA) et fonctionnement hors connexion. */
-const VERSION = 'fasogaz-v1';
+const VERSION = 'fasogaz-v2';
 const SHELL = [
   '/', '/styles.css', '/parcours.css', '/app.js', '/parcours.js', '/art.js', '/manifest.webmanifest',
   '/icons/icon-192.png', '/icons/icon-512.png', '/icons/apple-touch-icon.png', '/icons/favicon-48.png',
