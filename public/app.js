@@ -182,6 +182,11 @@ function renderNav() {
   $('#nav').innerHTML = links.map(([href, label]) => `<a href="${href}" class="${cur === href ? 'active' : ''}${!u && href === '#/demande' ? ' cta-nav' : ''}">${label}</a>`).join('')
     + (u ? `<span class="who hide-sm">${esc(u.name)} · ${ROLE[u.role]}</span><button id="logout">Déconnexion</button>` : '');
   $('#logout')?.addEventListener('click', () => logout());
+  const tabs = !u || u.role === 'customer'
+    ? [['#/', 'home', 'Accueil'], ['#/demande', 'refresh', 'Demandes'], ['#/commander', 'cart', 'Commander'], [u ? '#/commandes' : '#/connexion', 'clock', u ? 'Mes commandes' : 'Connexion']]
+    : null;
+  document.body.classList.toggle('has-tabbar', !!tabs);
+  $('#tabbar').innerHTML = tabs ? tabs.map(([href, ic, label]) => `<a href="${href}" class="${cur === href ? 'active' : ''}" aria-label="${label}" title="${label}">${Art.icon(ic, 22)}</a>`).join('') : '';
 }
 
 // ---------- Pages publiques ----------
@@ -286,14 +291,87 @@ function landingSections(stats, plans, brands) {
   </div></section>`;
 }
 
+// ---------- Style application (espace client) ----------
+const SERVICE_ICON = { livraison: ['cart', ''], echange: ['refresh', ''], collecte: ['truck', 'blue'], achat: ['sparkle', 'green'] };
+const LIVE = ['en_attente', 'confirmee', 'assignee', 'en_livraison'];
+
+const SHORT_STATUS = { en_attente: 'En attente', confirmee: 'Confirmée', assignee: 'Livreur assigné', en_livraison: 'En route', livree: 'Livrée', annulee: 'Annulée' };
+const shortDate = (s) => new Date(`${s.replace(' ', 'T')}Z`).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' });
+
+function orderItem(o) {
+  const [ic, tone] = SERVICE_ICON[o.service] || SERVICE_ICON.livraison;
+  return `<a class="o-item" href="#/commande/${o.id}">
+    <span class="o-ic ${tone}">${Art.icon(ic)}</span>
+    <span class="o-main"><b>#${esc(o.ref.replace(/^GZ-\d+-/, ''))}</b><small>${shortDate(o.created_at)} · ${esc(SHORT_CITY[o.city_name] || o.city_name)}</small></span>
+    <span class="o-side"><small>${money(o.total, o.currency)}</small><span class="pill s-${esc(o.status)}">${esc(SHORT_STATUS[o.status] || o.status_label)}</span></span>
+  </a>`;
+}
+function requestItem(r) {
+  const [ic, tone] = SERVICE_ICON[r.service] || SERVICE_ICON.echange;
+  return `<a class="o-item" href="#/demande">
+    <span class="o-ic ${tone}">${Art.icon(ic)}</span>
+    <span class="o-main"><b>${esc(SERVICE_LABEL[r.service])}</b><small>${ago(r.created_at)} · ${esc(SHORT_CITY[r.city_name] || r.city_name)}</small></span>
+    <span class="o-side"><small>${esc([r.brand, r.weight_kg ? `${String(r.weight_kg).replace('.', ',')} kg` : ''].filter(Boolean).join(' ') || `${r.qty} bouteille(s)`)}</small>
+      <span class="pill s-ouverte">En attente</span></span>
+  </a>`;
+}
+
+const SVC_CARDS = [
+  ['refresh', 'Recharge de gaz', 'Bouteille pleine livrée, la vide reprise', 'orange', 'Recharger', '#/demande?service=echange'],
+  ['truck', 'Collecte et recharge', 'On vient chercher votre bouteille', 'blue', 'Programmer une collecte', '#/demande?service=collecte'],
+  ['sparkle', 'Bouteille neuve', 'Votre première bouteille, consigne incluse', 'green', 'Acheter', '#/demande?service=achat'],
+  ['cart', 'Commander en ligne', 'Choisissez le dépôt, payez à la livraison', 'orange', 'Commander', '#/commander'],
+];
+
+function clientTop({ first, initials, cityName, orders, requests, query, cityId, brands, served }) {
+  const openReq = requests.filter((r) => r.status === 'ouverte');
+  const items = [...openReq.map(requestItem), ...orders.slice(0, Math.max(0, 4 - openReq.length)).map(orderItem)];
+  const busy = openReq.length || orders.some((o) => LIVE.includes(o.status));
+  return `
+  <section class="wrap app-home">
+    <div class="app-top">
+      <span class="avatar" aria-hidden="true">${esc(initials)}</span>
+      <button type="button" class="loc-pill" id="geo" aria-label="Utiliser ma position">${Art.icon('pin', 18)}<span id="loclabel">${esc(state.pos ? 'Ma position' : cityName)}</span>${Art.icon('chev', 16)}</button>
+      <a class="icon-btn" href="#/demande" aria-label="Mes demandes${busy ? ' (en cours)' : ''}">${Art.icon('bell')}${busy ? '<i class="dot"></i>' : ''}</a>
+    </div>
+    <div class="app-hello"><h1>Bonjour ${first} 👋</h1><p class="muted">De quoi avez-vous besoin aujourd'hui ?</p></div>
+    <form class="searchbox app-search" id="sf" role="search">
+      <div class="q"><input id="q" type="search" value="${esc(query)}" placeholder="Sodigaz, Oryx Bobo, Total 6 kg…" autocomplete="off" aria-label="Marque ou produit"></div>
+      <select id="sc" aria-label="Ville" hidden><option value="">Toutes les villes</option>${cityOptions(cityId, (c) => c.providers > 0)}</select>
+    </form>
+    <div class="chips app-chips">${brands.map((b) => `<button type="button" class="chip" data-brand="${esc(b)}">${esc(b)}</button>`).join('')}
+      ${served.map((c) => `<button type="button" class="chip" data-city="${c.id}">📍 ${esc(SHORT_CITY[c.name] || c.name)}</button>`).join('')}</div>
+    <div class="geo-note" id="geonote"></div>
+
+    <div class="app-col">
+      <div class="carousel" id="carousel" aria-label="Services">
+        ${SVC_CARDS.map(([ic, t, d, color, cta, href]) => `
+          <article class="svc-card ${color}">
+            <div class="svc-head"><span class="svc-ic">${Art.icon(ic)}</span><div><b>${t}</b><small>${d}</small></div></div>
+            ${Art.bottleStudio(color)}
+            <a class="btn-pill" href="${href}">${cta}</a>
+          </article>`).join('')}
+      </div>
+      <div class="dots" id="dots">${SVC_CARDS.map((_, i) => `<button type="button" aria-label="Service ${i + 1}" class="${i ? '' : 'on'}"></button>`).join('')}</div>
+    </div>
+
+    <div class="sheet">
+      <div class="sheet-head"><h2>Mes commandes</h2><a href="#/commandes">Tout voir</a></div>
+      ${items.length ? items.join('') : `<div class="o-empty">${Art.icon('flame', 22)}<span>Pas encore de commande.<br><a href="#/demande">Faites votre première demande</a></span></div>`}
+    </div>
+  </section>
+  <h2 class="wrap app-h2">Points de vente près de vous</h2>`;
+}
+
 /** Accueil client : recherche par marque, points de vente du plus proche au plus loin. */
 async function pageSearch(params) {
   const pageId = routeSeq;
   const guest = !state.me;
   let query = params.get('q') || '';
   let cityId = params.get('ville') || '';
-  const [brands, stats, plans] = await Promise.all([
+  const [brands, stats, plans, myOrders, myRequests] = await Promise.all([
     api('GET', '/api/brands'), api('GET', '/api/stats/public'), guest ? api('GET', '/api/plans') : [],
+    guest ? [] : api('GET', '/api/orders'), guest ? [] : api('GET', '/api/requests'),
   ]);
   if (pageId !== routeSeq) return; // page quittée entre-temps
   const PRIORITY = ['Ouagadougou', 'Bobo-Dioulasso', 'Banfora'];
@@ -301,9 +379,14 @@ async function pageSearch(params) {
   const served = state.cities.filter((c) => c.providers > 0).sort((a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name));
   const rot = brands.length ? brands : ['Sodigaz', 'Oryx', 'Total', 'Shell'];
   const first = state.me ? esc(state.me.user.name.split(' ')[0]) : '';
-  view.className = 'landing';
-  view.innerHTML = `
-    <section class="hero ${guest ? '' : 'compact'}">
+  view.className = guest ? 'landing' : 'landing app';
+  const me = state.me?.user;
+  view.innerHTML = `${guest ? '' : clientTop({
+    first, initials: me.name.split(' ').map((w) => w[0]).join('').slice(0, 2).toUpperCase(),
+    cityName: state.cities.find((c) => c.id === me.city_id)?.name || 'Choisir ma position',
+    orders: myOrders, requests: myRequests, query, cityId, brands, served,
+  })}
+    ${!guest ? '' : `<section class="hero">
       <div class="wrap hero-grid">
         <div>
           <span class="eyebrow"><b>🇧🇫 Burkina Faso</b> ${stats.points} points de vente · ${stats.cities} villes</span>
@@ -324,7 +407,7 @@ async function pageSearch(params) {
         <div class="hero-art">${Art.hero()}</div>
       </div>
       <svg class="hero-wave" viewBox="0 0 1440 70" preserveAspectRatio="none" aria-hidden="true"><path d="M0 38 C 240 78 480 0 720 22 S 1200 70 1440 28 V70 H0Z"/></svg>
-    </section>
+    </section>`}
     <section class="wrap results-wrap" id="results">
       <div class="results"><div id="list" class="stack"></div><div id="map" role="region" aria-label="Carte des points de vente"></div></div>
       <div class="card cta" style="margin-top:16px">
@@ -332,7 +415,7 @@ async function pageSearch(params) {
         <a class="btn primary" id="cta" href="#/demande">♻️ Faire une demande</a>
       </div>
     </section>
-    ${guest ? landingSections(stats, plans, brands) : servicesSection()}
+    ${guest ? landingSections(stats, plans, brands) : ''}
     ${footer()}`;
 
   // Marque qui défile dans le titre.
@@ -350,6 +433,16 @@ async function pageSearch(params) {
       setTimeout(tick, 2400);
     };
     setTimeout(tick, 2400);
+  }
+  const car = $('#carousel');
+  if (car) {
+    const dots = $$('#dots button');
+    const step = () => car.firstElementChild.getBoundingClientRect().width + 12;
+    car.addEventListener('scroll', () => {
+      const i = Math.min(dots.length - 1, Math.round(car.scrollLeft / step()));
+      dots.forEach((d, k) => d.classList.toggle('on', k === i));
+    }, { passive: true });
+    dots.forEach((d, k) => d.addEventListener('click', () => car.scrollTo({ left: k * step(), behavior: REDUCED ? 'auto' : 'smooth' })));
   }
   $('#totop')?.addEventListener('click', (e) => { e.preventDefault(); window.scrollTo({ top: 0, behavior: REDUCED ? 'auto' : 'smooth' }); setTimeout(() => $('#q')?.focus(), 500); });
 
@@ -468,6 +561,7 @@ async function pageSearch(params) {
     $$('.chip[data-brand]').forEach((c) => c.classList.toggle('on', c.dataset.brand.toLowerCase() === query.trim().toLowerCase()));
     $$('.chip[data-city]').forEach((c) => c.classList.toggle('on', c.dataset.city === String(cityId)));
     note();
+    if ($('#loclabel') && state.pos) $('#loclabel').textContent = results[0] ? `Près de ${SHORT_CITY[results[0].city_name] || results[0].city_name}` : 'Ma position';
     draw(results);
   };
 
@@ -704,8 +798,7 @@ async function pageMyOrders() {
   const orders = await api('GET', '/api/orders');
   if (pageId !== routeSeq) return; // page quittée entre-temps
   view.innerHTML = `<div class="row between"><h1>Mes commandes</h1><a class="btn primary" href="#/commander">Nouvelle commande</a></div>
-    <div class="card">${ordersTable(orders, { showTenant: true })}</div>`;
-  bindRows();
+    <div class="sheet stagger">${orders.length ? orders.map(orderItem).join('') : emptyBox('Aucune commande pour le moment.')}</div>`;
 }
 
 // ---------- Détail d'une commande (tous rôles) ----------

@@ -224,5 +224,55 @@
 
   Art.logo = () => `<svg class="logo-svg" viewBox="-16 -18 32 32" aria-hidden="true">${defs}${flame(0, 0, 1.25)}</svg>`;
 
+
+  /* ---------- Bouteille « studio » (cartes de services, style application) ---------- */
+  const STUDIO = {
+    orange: ['#9a3412', '#ff9a52', '#f25c05', '#a83a08', '#c2410c'],
+    blue: ['#1e3a8a', '#7cb6ff', '#2563eb', '#1e3a8a', '#1d4ed8'],
+    green: ['#14532d', '#6ee7a0', '#16a34a', '#14532d', '#15803d'],
+  };
+  Art.bottleStudio = (color = 'orange') => {
+    const [d1, light, mid, d2, guard] = STUDIO[color] || STUDIO.orange;
+    const id = `gf-studio-${color}`;
+    return `
+    <svg class="art bottle-studio" viewBox="0 0 200 232" aria-hidden="true">
+      <defs>
+        <linearGradient id="${id}" x1="0" x2="1"><stop offset="0" stop-color="${d1}"/><stop offset=".32" stop-color="${light}"/>
+          <stop offset=".62" stop-color="${mid}"/><stop offset="1" stop-color="${d2}"/></linearGradient>
+        <radialGradient id="${id}-sh"><stop offset="0" stop-color="#000" stop-opacity=".28"/><stop offset="1" stop-color="#000" stop-opacity="0"/></radialGradient>
+      </defs>
+      <ellipse cx="100" cy="222" rx="76" ry="10" fill="url(#${id}-sh)"/>
+      <g class="a-float">
+        <rect x="84" y="26" width="32" height="22" rx="5" fill="#ef4444"/><circle cx="80" cy="38" r="8" fill="#334155"/>
+        <path fill-rule="evenodd" fill="${guard}" d="M66 8 h68 a18 18 0 0 1 18 18 v40 h-104 v-40 a18 18 0 0 1 18 -18z
+          M76 20 h48 a8 8 0 0 1 8 8 v12 a8 8 0 0 1 -8 8 h-48 a8 8 0 0 1 -8 -8 v-12 a8 8 0 0 1 8 -8z"/>
+        <rect x="30" y="58" width="140" height="152" rx="58" fill="url(#${id})"/>
+        <path d="M100 118 C 116 136 126 146 122 166 C 118 184 82 184 78 166 C 74 148 90 140 100 118 Z" fill="#fff" opacity=".22"/>
+        <rect x="50" y="80" width="13" height="110" rx="6.5" fill="#fff" opacity=".32"/>
+        <rect x="46" y="202" width="108" height="16" rx="6" fill="${guard}"/>
+      </g>
+    </svg>`;
+  };
+
+  /* ---------- Icônes au trait (interface application) ---------- */
+  const ICONS = {
+    home: '<path d="M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z"/>',
+    cart: '<path d="M3 4h2l2.4 10.2a1 1 0 0 0 1 .8h8.8a1 1 0 0 0 1-.8L20 8H6"/><circle cx="9" cy="19.5" r="1.3"/><circle cx="17" cy="19.5" r="1.3"/>',
+    list: '<path d="M9 6h11M9 12h11M9 18h11"/><circle cx="4.5" cy="6" r="1"/><circle cx="4.5" cy="12" r="1"/><circle cx="4.5" cy="18" r="1"/>',
+    clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+    bell: '<path d="M6 9a6 6 0 1 1 12 0c0 6 2.5 7.5 2.5 7.5h-17S6 15 6 9z"/><path d="M10 20a2 2 0 0 0 4 0"/>',
+    pin: '<path d="M12 21s-7-6.2-7-11.5a7 7 0 1 1 14 0C19 14.8 12 21 12 21z"/><circle cx="12" cy="9.5" r="2.5"/>',
+    chev: '<path d="M6 9l6 6 6-6"/>',
+    flame: '<path d="M12 3c2 3.5 5 5.5 5 10a5 5 0 0 1-10 0c0-2.5 1.2-3.8 2.5-5 .3 1.5 1 2.5 2 3 0-3 .3-5.5.5-8z"/>',
+    refresh: '<path d="M20 11a8 8 0 0 0-14.5-4.5L4 8"/><path d="M4 4v4h4"/><path d="M4 13a8 8 0 0 0 14.5 4.5L20 16"/><path d="M20 20v-4h-4"/>',
+    truck: '<path d="M3 6h11v10H3z"/><path d="M14 10h4l3 3v3h-7"/><circle cx="7" cy="18.5" r="1.8"/><circle cx="17" cy="18.5" r="1.8"/>',
+    sparkle: '<path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/>',
+    chat: '<path d="M4 5h16v11H9l-5 4z"/>',
+    search: '<circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/>',
+    arrow: '<path d="M5 12h14M13 6l6 6-6 6"/>',
+  };
+  Art.icon = (name, size = 20) => `<svg class="ico" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+    stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[name] || ''}</svg>`;
+
   window.Art = Art;
 }());

@@ -36,6 +36,11 @@ Un visiteur peut remplir une demande sans compte. Elle est conservée pendant qu
   - transitions entre les pages et apparitions au défilement ;
   - écrans de chargement, états vides illustrés ;
   - suivi de livraison avec un scooter qui avance jusqu'à l'étape en cours.
+- **Espace client façon application mobile** :
+  - en-tête avec avatar, pastille de position (« Près de Ouaga ») et cloche qui signale une demande ou une livraison en cours ;
+  - carrousel de services avec de grandes bouteilles et des boutons en pilule (Recharger, Collecte, Bouteille neuve, Commander) ;
+  - panneau « Mes commandes » avec statuts colorés ;
+  - barre d'onglets flottante en bas de l'écran sur mobile.
 - **Illustrations maison** (`public/art.js`) : en SVG animé, sans droits d'auteur, légères et adaptées au mode sombre. Elles se mettent en pause quand elles ne sont pas à l'écran.
 - **Accessibilité** : si l'appareil demande de réduire les animations, tout reste visible et rien ne bouge.
 - **Responsive** : menu mobile, recherche et carte empilées, commandes affichées en cartes sur téléphone, aucun défilement horizontal.

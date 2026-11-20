@@ -325,7 +325,7 @@ dialog .card { border: 0; box-shadow: none; }
 .cta { display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap; background: var(--primary-soft); border-color: color-mix(in srgb, var(--primary) 40%, transparent); }
 @media (max-width: 860px) {
   .results { grid-template-columns: 1fr; }
-  #map { position: static; height: 260px; order: -1; }
+  #map { position: relative !important; top: 0; height: 260px; order: -1; }
   .searchbox select, .searchbox .btn { flex: 1 1 140px; }
 }
 
@@ -435,3 +435,89 @@ dialog .card { border: 0; box-shadow: none; }
 }
 .auth { max-width: 560px; margin: 16px auto; }
 .city-chips { margin-top: -6px; }
+
+/* =========================================================
+   Espace client — style application (carrousel, commandes, onglets)
+   ========================================================= */
+.ico { display: block; flex: none; }
+#view.app { background: var(--bg); }
+.app-home { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, .9fr); gap: 16px 24px; padding-top: 20px; padding-bottom: 8px; align-items: start; }
+.app-home > :not(.app-col):not(.sheet) { grid-column: 1 / -1; }
+.app-top { display: flex; align-items: center; gap: 12px; }
+.avatar { position: relative; width: 46px; height: 46px; border-radius: 50%; background: var(--grad); color: #fff; display: grid; place-items: center; font-weight: 800; flex: none; }
+.avatar::after { content: ""; position: absolute; right: 1px; bottom: 1px; width: 11px; height: 11px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 0 2.5px var(--bg); }
+.loc-pill { margin: 0 auto; display: inline-flex; align-items: center; gap: 8px; max-width: min(62%, 360px); padding: 10px 16px; border-radius: 999px; border: 1px solid var(--border);
+  background: var(--surface); color: var(--text); font: inherit; font-size: .9rem; font-weight: 600; cursor: pointer; box-shadow: var(--shadow); transition: transform .2s var(--ease); }
+.loc-pill:active { transform: scale(.97); }
+.loc-pill span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.loc-pill .ico:first-child { color: var(--primary); }
+.icon-btn { position: relative; width: 46px; height: 46px; border-radius: 50%; display: grid; place-items: center; flex: none; background: var(--surface); border: 1px solid var(--border); color: var(--text); box-shadow: var(--shadow); }
+.icon-btn .dot { position: absolute; top: 11px; right: 12px; width: 9px; height: 9px; border-radius: 50%; background: var(--primary); box-shadow: 0 0 0 2.5px var(--surface); animation: blink 1.6s infinite; }
+.app-hello h1 { margin: 6px 0 2px; font-size: clamp(1.5rem, 4vw, 2rem); }
+.app-hello p { margin: 0; }
+.app-search .q input { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; box-shadow: var(--shadow); }
+.app-chips { margin: 0; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; padding-bottom: 2px; }
+.app-chips::-webkit-scrollbar, .carousel::-webkit-scrollbar { display: none; }
+.app-chips .chip { flex: none; }
+
+.carousel { display: grid; grid-auto-flow: column; grid-auto-columns: 100%; gap: 12px; overflow-x: auto; scroll-snap-type: x mandatory; scrollbar-width: none; overscroll-behavior-x: contain; border-radius: 28px; }
+.svc-card { position: relative; scroll-snap-align: start; height: 380px; border-radius: 28px; padding: 18px; overflow: hidden; border: 1px solid var(--border);
+  background: linear-gradient(180deg, var(--surface) 0%, var(--surface-2) 40%, color-mix(in srgb, var(--border) 85%, var(--surface)) 100%); }
+.svc-card.orange { --tone: var(--primary); --tone-soft: var(--primary-soft); }
+.svc-card.blue { --tone: var(--info); --tone-soft: var(--info-soft); }
+.svc-card.green { --tone: var(--ok); --tone-soft: var(--ok-soft); }
+.svc-head { position: relative; z-index: 1; display: flex; gap: 12px; align-items: center; }
+.svc-head b { display: block; font-size: 1.05rem; }
+.svc-head small { color: var(--muted); }
+.svc-ic { width: 42px; height: 42px; border-radius: 13px; display: grid; place-items: center; background: var(--surface); border: 1px solid var(--border); color: var(--tone); flex: none; }
+.svc-card .bottle-studio { position: absolute; left: 0; right: 0; margin: 0 auto; bottom: 62px; height: 56%; width: auto; max-width: 72%; }
+.btn-pill { position: absolute; left: 14px; right: 14px; bottom: 14px; z-index: 1; padding: 15px; border-radius: 999px; background: #fff; color: #0f172a; text-align: center;
+  font-weight: 800; text-decoration: none; box-shadow: 0 8px 24px rgba(15, 23, 42, .14); transition: transform .2s var(--ease), background .2s; }
+.btn-pill:hover { background: var(--tone); color: #fff; }
+.btn-pill:active { transform: scale(.98); }
+.dots { display: flex; justify-content: center; gap: 6px; margin-top: 12px; }
+.dots button { width: 7px; height: 7px; border-radius: 4px; border: 0; padding: 0; background: var(--border); cursor: pointer; transition: width .35s var(--ease), background .35s; }
+.dots button.on { width: 20px; background: var(--primary); }
+
+.sheet { position: relative; background: var(--surface); border: 1px solid var(--border); border-radius: 28px; padding: 14px 18px 6px; box-shadow: var(--shadow); }
+.sheet::before { content: ""; display: block; width: 40px; height: 4px; border-radius: 2px; background: var(--border); margin: 0 auto 6px; }
+.sheet-head { display: flex; justify-content: space-between; align-items: center; padding: 6px 0 10px; }
+.sheet-head h2 { margin: 0; font-size: 1.1rem; }
+.sheet-head a { color: var(--muted); font-weight: 600; text-decoration: none; font-size: .9rem; }
+.o-item { display: flex; align-items: center; gap: 12px; padding: 13px 2px; border-top: 1px solid var(--border); color: inherit; text-decoration: none; border-radius: 12px; transition: background .2s; }
+.o-item:hover { background: var(--surface-2); }
+.o-ic { width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; flex: none; background: var(--primary-soft); color: var(--primary); }
+.o-ic.blue { background: var(--info-soft); color: var(--info); } .o-ic.green { background: var(--ok-soft); color: var(--ok); }
+.o-main { flex: 1; min-width: 0; }
+.o-main b { display: block; font-size: .95rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.o-main small { color: var(--muted); }
+.o-side { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; text-align: right; max-width: 45%; }
+.o-side small { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+.pill { display: inline-flex; align-items: center; gap: 5px; padding: 2px 9px; border-radius: 999px; font-size: .72rem; font-weight: 700; white-space: nowrap; }
+.pill::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.o-empty { display: flex; gap: 12px; align-items: center; padding: 16px 2px 18px; border-top: 1px solid var(--border); color: var(--muted); }
+.o-empty .ico { color: var(--primary); }
+.app-h2 { margin-top: 28px; margin-bottom: 12px; }
+
+#tabbar { display: none; }
+@media (max-width: 860px) {
+  .app-home { grid-template-columns: 1fr; }
+  .app-home > * { grid-column: 1 / -1; }
+  .carousel { grid-auto-columns: 86%; border-radius: 0; margin: 0 -16px; padding: 0 16px; scroll-padding: 0 16px; }
+  .svc-card { height: 360px; }
+}
+@media (max-width: 760px) {
+  body.has-tabbar #tabbar { display: flex; position: fixed; left: 0; right: 0; margin: 0 auto; width: max-content; bottom: calc(14px + env(safe-area-inset-bottom)); z-index: 40; gap: 4px; padding: 6px;
+    border-radius: 999px; background: color-mix(in srgb, var(--surface) 88%, transparent); backdrop-filter: saturate(1.6) blur(16px); -webkit-backdrop-filter: saturate(1.6) blur(16px);
+    border: 1px solid var(--border); box-shadow: var(--shadow-lg); animation: rise .5s var(--ease) both; }
+  #tabbar a { width: 50px; height: 50px; border-radius: 50%; display: grid; place-items: center; color: var(--muted); transition: background .25s, color .25s, transform .2s var(--ease); }
+  #tabbar a:active { transform: scale(.92); }
+  #tabbar a.active { background: var(--primary-soft); color: var(--primary); }
+  body.has-tabbar { padding-bottom: 92px; }
+  body.has-tabbar #toast { bottom: 96px; }
+  body.has-tabbar .cart-bar { bottom: 88px; }
+  .app-top .loc-pill { max-width: 58%; }
+}
+/* La carte reste sous l'en-tête et la barre d'onglets ; les rangées défilantes ne débordent pas. */
+#map { isolation: isolate; }
+.app-home > * { min-width: 0; }
