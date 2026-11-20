@@ -1,0 +1,26 @@
+{
+  "name": "gazflow",
+  "version": "1.0.0",
+  "description": "SaaS de commande et livraison de gaz multi-villes",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node --no-warnings src/server.js",
+    "dev": "node --no-warnings --watch src/server.js",
+    "test": "node --no-warnings --test test/*.test.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/omzakrevo/Rencontre.git"
+  },
+  "bugs": {
+    "url": "https://github.com/omzakrevo/Rencontre/issues"
+  },
+  "homepage": "https://github.com/omzakrevo/Rencontre#readme",
+  "dependencies": {
+    "express": "^4.22.3"
+  },
+  "private": true,
+  "engines": {
+    "node": ">=22.13"
+  }
+}
