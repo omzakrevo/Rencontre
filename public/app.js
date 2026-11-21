@@ -1371,10 +1371,15 @@ async function route(quiet = false) {
   try {
     // Sur téléphone, l'accueil est le parcours pas-à-pas ; « #/carte » donne la recherche complète.
     const isPhone = window.matchMedia('(max-width: 820px)').matches;
-    if (path === '/parcours' || (path === '/' && isPhone && (!role || role === 'customer'))) {
-      return (!role || role === 'customer') ? await window.pageFlow() : (location.hash = homeFor(role));
+    // Sur téléphone, les clients restent dans l'application : aucune page de l'ancien modèle.
+    const client = !role || role === 'customer';
+    if (path === '/parcours' || (isPhone && client && ['/', '/carte', '/demande', '/commander'].includes(path))) {
+      return client ? await window.pageFlow() : (location.hash = homeFor(role));
     }
-    if (path === '/carte') return (!role || role === 'customer') ? await pageSearch(params) : (location.hash = homeFor(role));
+    if (isPhone && client && path === '/commandes') return await window.pageFlow('orders');
+    if (isPhone && client && path.startsWith('/commande/')) return await window.pageFlow('track', Number(path.split('/')[2]));
+    if (isPhone && !role && path === '/connexion' && params.get('tab') !== 'signup') return await window.pageFlow('login');
+    if (path === '/carte') return client ? await pageSearch(params) : (location.hash = homeFor(role));
     if (path === '/') return (!role || role === 'customer') ? await pageSearch(params) : (location.hash = homeFor(role));
     if (path === '/demande') return (!role || role === 'customer') ? await pageRequest(params) : guard('customer');
     if (path === '/admin/demandes') return guard('admin') && await pageAdminRequests();

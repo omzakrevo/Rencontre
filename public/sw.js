@@ -1,9 +1,10 @@
 'use strict';
 /* FasoGaz — service worker : installation (PWA) et fonctionnement hors connexion. */
-const VERSION = 'fasogaz-v2';
+const VERSION = 'fasogaz-v3';
 const SHELL = [
   '/', '/styles.css', '/parcours.css', '/app.js', '/parcours.js', '/art.js', '/manifest.webmanifest',
-  '/icons/icon-192.png', '/icons/icon-512.png', '/icons/apple-touch-icon.png', '/icons/favicon-48.png',
+  '/icons/icon-192.png', '/icons/icon-512.png', '/icons/apple-touch-icon.png', '/icons/favicon-48.png', '/img/livreur-sodigaz.webp',
+  '/img/bouteilles/sodigaz.webp', '/img/bouteilles/oryx-19kg.webp', '/img/bouteilles/total.webp', '/img/bouteilles/shell.webp',
 ];
 // API publiques gardées en cache pour l'affichage hors connexion (villes, marques, catalogue).
 const CACHED_API = ['/api/cities', '/api/brands', '/api/catalog', '/api/plans', '/api/stats/public'];
