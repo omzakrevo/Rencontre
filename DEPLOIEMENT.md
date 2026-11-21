@@ -1,6 +1,6 @@
-# Déployer GazFlow sur un VPS avec Coolify
+# Déployer FasoGaz sur un VPS avec Coolify
 
-GazFlow tourne dans deux conteneurs :
+FasoGaz tourne dans deux conteneurs :
 - **app** : le serveur Node.js (API + site) ;
 - **db** : sa base Postgres 17, avec un volume pour garder les données.
 

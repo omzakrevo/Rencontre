@@ -1,4 +1,4 @@
-# Déploiement GazFlow sur un VPS avec Coolify (ou « docker compose up -d »).
+# Déploiement FasoGaz sur un VPS avec Coolify (ou « docker compose up -d »).
 # Dans Coolify, les variables SERVICE_* sont générées automatiquement (mots de passe, domaine).
 # Hors Coolify, renseignez-les dans un fichier .env (voir .env.example).
 services:

@@ -3,19 +3,27 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <title>GazFlow — Gaz livré à Ouaga, Bobo, Banfora</title>
-  <meta name="description" content="Burkina Faso : trouvez votre gaz (Sodigaz, Oryx, Total, Shell) au dépôt le plus proche à Ouagadougou, Bobo-Dioulasso, Banfora…, commandez ou demandez une recharge.">
-  <meta name="theme-color" content="#0b1b33">
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔥</text></svg>">
+  <title>FasoGaz — Gaz livré à Ouaga, Bobo, Banfora</title>
+  <meta name="description" content="Burkina Faso : trouvez votre gaz (Sodigaz, Oryx, Total, Shell) au dépôt le plus proche à Ouagadougou, Bobo-Dioulasso, Banfora…, faites-vous livrer ou faites recharger votre bouteille.">
+  <meta name="theme-color" content="#1859c9">
+  <meta name="application-name" content="FasoGaz">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="FasoGaz">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" type="image/png" sizes="48x48" href="/icons/favicon-48.png">
+  <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
   <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="/parcours.css">
 </head>
 <body>
   <header class="topbar">
-    <a href="#/" class="brand" aria-label="GazFlow, accueil"><span class="logo" id="logo"></span> GazFlow</a>
+    <a href="#/" class="brand" aria-label="FasoGaz, accueil"><span class="logo" id="logo"></span> FasoGaz</a>
     <button class="burger" id="burger" type="button" aria-label="Menu" aria-expanded="false" aria-controls="nav"><span></span></button>
     <nav id="nav" aria-label="Navigation principale"></nav>
   </header>
@@ -25,6 +33,12 @@
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
   <script src="/art.js"></script>
   <script>document.getElementById('logo').innerHTML = window.Art ? Art.logo() : '🔥';</script>
+  <script src="/parcours.js"></script>
   <script src="/app.js"></script>
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(() => {}));
+    }
+  </script>
 </body>
 </html>

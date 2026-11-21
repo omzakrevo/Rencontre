@@ -1,6 +1,6 @@
 'use strict';
 /*
- * GazFlow — illustrations SVG animées (motion design).
+ * FasoGaz — illustrations SVG animées (motion design).
  * Dessinées à la main, sans dépendance ni droits d'auteur. Les animations sont en CSS (styles.css, section « Art »)
  * et sont désactivées automatiquement si l'utilisateur a demandé à réduire les animations.
  */
